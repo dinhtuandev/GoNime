@@ -30,9 +30,40 @@ type Downloader struct {
 func NewPlayer(name string) (*Player, error) {
 	path, err := exec.LookPath(name)
 	if err != nil {
+		// Thử tìm trong các đường dẫn phổ biến trên Windows
+		commonPaths := []string{
+			`C:\Program Files\mpv\mpv.exe`,
+			`C:\Program Files (x86)\mpv\mpv.exe`,
+			`C:\Program Files\VideoLAN\VLC\vlc.exe`,
+			`C:\Program Files (x86)\VideoLAN\VLC\vlc.exe`,
+		}
+		for _, p := range commonPaths {
+			if _, statErr := exec.LookPath(p); statErr == nil {
+				return &Player{Name: name, Path: p}, nil
+			}
+			// Dùng os.Stat cho absolute path
+			if checkFileExists(p) {
+				return &Player{Name: name, Path: p}, nil
+			}
+		}
 		return nil, fmt.Errorf("không tìm thấy trình phát %s: %v", name, err)
 	}
 	return &Player{Name: name, Path: path}, nil
+}
+
+// FindAnyPlayer tìm bất kỳ trình phát nào có sẵn
+func FindAnyPlayer() (*Player, error) {
+	for _, name := range []string{"mpv", "vlc", "mpv.exe", "vlc.exe"} {
+		if p, err := NewPlayer(name); err == nil {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("không tìm thấy trình phát video nào (mpv, vlc). Vui lòng cài đặt mpv hoặc VLC")
+}
+
+func checkFileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func (p *Player) Play(url string, title string) error {

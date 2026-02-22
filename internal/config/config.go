@@ -124,6 +124,11 @@ func (m *Manager) SaveConfig(cfg *Config) error {
 	return os.Rename(tmpFile, m.ConfigFile)
 }
 
+// GetDefaultConfigForManager trả về config mặc định (dùng cho Settings reset)
+func GetDefaultConfigForManager(m *Manager) *Config {
+	return m.getDefaultConfig()
+}
+
 func (m *Manager) getDefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	if homeDir == "" {

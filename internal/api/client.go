@@ -8,88 +8,148 @@ import (
 	"time"
 )
 
-type Anime struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Cover       string    `json:"cover"`
-	Episodes    []Episode `json:"episodes"`
+const (
+	BaseURL       = "https://phimapi.com"
+	SearchAPIURL  = "https://phimapi.com/v1/api/tim-kiem"
+	EpisodeAPIURL = "https://phimapi.com/phim"
+)
+
+// --- Search Response Structs ---
+
+type SearchResult struct {
+	Status string     `json:"status"`
+	Data   SearchData `json:"data"`
 }
 
-type Episode struct {
-	Number string `json:"number"`
-	Title  string `json:"title"`
-	URL    string `json:"url"`
+type SearchData struct {
+	Items         []AnimeItem `json:"items"`
+	CDNImageDomain string     `json:"APP_DOMAIN_CDN_IMAGE"`
 }
+
+type AnimeItem struct {
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	Year      int    `json:"year"`
+	PosterURL string `json:"poster_url"`
+}
+
+// --- Episode Response Structs ---
+
+type EpisodeResponse struct {
+	Status   bool            `json:"status"`
+	Movie    MovieInfo       `json:"movie"`
+	Episodes []EpisodeServer `json:"episodes"`
+}
+
+type MovieInfo struct {
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	OriginName  string `json:"origin_name"`
+	Description string `json:"content"`
+	PosterURL   string `json:"poster_url"`
+	ThumbURL    string `json:"thumb_url"`
+	Year        int    `json:"year"`
+	Episode     string `json:"episode_current"`
+	Time        string `json:"time"`
+	Quality     string `json:"quality"`
+	Lang        string `json:"lang"`
+}
+
+type EpisodeServer struct {
+	ServerName string         `json:"server_name"`
+	ServerData []EpisodeData  `json:"server_data"`
+}
+
+type EpisodeData struct {
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	LinkM3U8 string `json:"link_m3u8"`
+	LinkEmbed string `json:"link_embed"`
+}
+
+// --- Client ---
 
 type AnimeClient struct {
-	BaseURL    string
 	HTTPClient *http.Client
 }
 
-func NewAnimeClient(baseURL string) *AnimeClient {
+func NewAnimeClient() *AnimeClient {
 	return &AnimeClient{
-		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-func (c *AnimeClient) Search(query string) ([]Anime, error) {
-	encodedQuery := url.QueryEscape(query)
-	reqURL := c.BaseURL + "/search?q=" + encodedQuery
-
+func (c *AnimeClient) doGet(reqURL string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "GoNime/1.0")
+	req.Header.Set("User-Agent", "GoNime/1.0.0")
 	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("failed to search anime: " + resp.Status)
-	}
-
-	var result []Anime
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return c.HTTPClient.Do(req)
 }
 
-func (c *AnimeClient) GetDetails(slug string) (*Anime, error) {
-	encodedSlug := url.PathEscape(slug)
-	reqURL := c.BaseURL + "/anime/" + encodedSlug
+// Search tìm kiếm anime theo keyword, trả về danh sách AnimeItem
+func (c *AnimeClient) Search(query string) ([]AnimeItem, string, error) {
+	encodedQuery := url.QueryEscape(query)
+	reqURL := SearchAPIURL + "?keyword=" + encodedQuery + "&limit=20"
 
-	req, err := http.NewRequest("GET", reqURL, nil)
+	resp, err := c.doGet(reqURL)
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "GoNime/1.0")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("failed to get anime details: " + resp.Status)
+		return nil, "", errors.New("lỗi kết nối API: " + resp.Status)
 	}
 
-	var anime Anime
-	if err := json.NewDecoder(resp.Body).Decode(&anime); err != nil {
-		return nil, err
+	var result SearchResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, "", err
 	}
 
-	return &anime, nil
+	if result.Status != "success" {
+		return nil, "", errors.New("API trả về lỗi")
+	}
+
+	return result.Data.Items, result.Data.CDNImageDomain, nil
+}
+
+// GetEpisodes lấy chi tiết phim và danh sách tập theo slug
+func (c *AnimeClient) GetEpisodes(slug string) (*MovieInfo, []EpisodeData, error) {
+	encodedSlug := url.PathEscape(slug)
+	reqURL := EpisodeAPIURL + "/" + encodedSlug
+
+	resp, err := c.doGet(reqURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, errors.New("không tìm thấy phim: " + resp.Status)
+	}
+
+	var result EpisodeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, nil, err
+	}
+
+	if !result.Status {
+		return nil, nil, errors.New("không tìm thấy thông tin phim")
+	}
+
+	// Lấy server đầu tiên có dữ liệu m3u8
+	var episodes []EpisodeData
+	for _, server := range result.Episodes {
+		if len(server.ServerData) > 0 {
+			episodes = server.ServerData
+			break
+		}
+	}
+
+	return &result.Movie, episodes, nil
 }

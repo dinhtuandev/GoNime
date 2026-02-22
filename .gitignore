@@ -1,0 +1,55 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Config (user-specific)
+config.json
+history.json
+favorites.json
+
+# Temp files
+tmp/
+temp/
+*.tmp
+
+# Logs
+*.log
+
+# Assets (large files)
+assets/*.csv
+assets/*.mp4
+assets/*.jpeg
+assets/*.jpg
+assets/*.png
+assets/*.webp

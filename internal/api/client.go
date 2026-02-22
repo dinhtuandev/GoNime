@@ -118,8 +118,31 @@ func (c *AnimeClient) Search(query string) ([]AnimeItem, string, error) {
 	return result.Data.Items, result.Data.CDNImageDomain, nil
 }
 
-// GetEpisodes lấy chi tiết phim và danh sách tập theo slug
+// GetEpisodes lấy chi tiết phim và danh sách tập theo slug (server đầu tiên có m3u8)
 func (c *AnimeClient) GetEpisodes(slug string) (*MovieInfo, []EpisodeData, error) {
+	movie, servers, err := c.GetAllServers(slug)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Ưu tiên server có link_m3u8 thật (không phải embed)
+	for _, server := range servers {
+		for _, ep := range server.ServerData {
+			if ep.LinkM3U8 != "" {
+				return movie, server.ServerData, nil
+			}
+		}
+	}
+	// Fallback: lấy server đầu tiên có data
+	for _, server := range servers {
+		if len(server.ServerData) > 0 {
+			return movie, server.ServerData, nil
+		}
+	}
+	return movie, nil, nil
+}
+
+// GetAllServers lấy tất cả servers/chất lượng của một phim
+func (c *AnimeClient) GetAllServers(slug string) (*MovieInfo, []EpisodeServer, error) {
 	encodedSlug := url.PathEscape(slug)
 	reqURL := EpisodeAPIURL + "/" + encodedSlug
 
@@ -142,14 +165,6 @@ func (c *AnimeClient) GetEpisodes(slug string) (*MovieInfo, []EpisodeData, error
 		return nil, nil, errors.New("không tìm thấy thông tin phim")
 	}
 
-	// Lấy server đầu tiên có dữ liệu m3u8
-	var episodes []EpisodeData
-	for _, server := range result.Episodes {
-		if len(server.ServerData) > 0 {
-			episodes = server.ServerData
-			break
-		}
-	}
-
-	return &result.Movie, episodes, nil
+	return &result.Movie, result.Episodes, nil
 }
+

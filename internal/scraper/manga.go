@@ -245,61 +245,74 @@ func (s *MangaScraper) GetTrending() ([]Manga, error) {
 	var mangas []Manga
 	seen := make(map[string]bool)
 
-	// Nhiều selector để bắt manga từ trang chủ (slider, latest, popular)
+	// Selector chuẩn của Madara theme cho trang chủ/listing
 	selectors := []string{
-		".slider__thumb_item a",
 		".page-item-detail .post-title a",
+		".slider__thumb_item a",
 		".c-tabs-item__content .post-title a",
 		".manga-title-badges a",
 		".post-title a",
+		"h3 a",
 	}
 
 	for _, sel := range selectors {
 		doc.Find(sel).Each(func(i int, s *goquery.Selection) {
 			link, _ := s.Attr("href")
-			title := strings.TrimSpace(s.AttrOr("title", ""))
-			if title == "" {
-				title = strings.TrimSpace(s.Text())
-			}
-			slug := extractSlug(link)
-
-			if slug == "" || title == "" || seen[slug] || len(slug) < 3 {
-				return
-			}
-			// Chỉ lấy link dẫn đến /truyen-tranh/
 			if !strings.Contains(link, "/truyen-tranh/") {
 				return
 			}
+
+			// Lấy title từ nhiều nguồn
+			var title string
+			if t, ok := s.Attr("title"); ok && t != "" {
+				title = t
+			} else if t, ok := s.Attr("alt"); ok && t != "" {
+				title = t
+			} else {
+				title = strings.TrimSpace(s.Text())
+			}
+
+			slug := extractSlug(link)
+			if slug == "" || title == "" || seen[slug] || len(slug) < 3 {
+				return
+			}
+
 			seen[slug] = true
 			mangas = append(mangas, Manga{
 				Name: title,
 				Slug: slug,
 			})
 		})
-		if len(mangas) >= 10 {
+		if len(mangas) >= 15 {
 			break
 		}
 	}
 
-	// Fallback nếu ít quá
+	// Cuối cùng nếu vẫn ít, quét mọi link /truyen-tranh/
 	if len(mangas) < 5 {
-		doc.Find("a[href*='/truyen-tranh/']").Each(func(i int, s *goquery.Selection) {
+		doc.Find("a").Each(func(i int, s *goquery.Selection) {
 			link, _ := s.Attr("href")
+			if !strings.Contains(link, "/truyen-tranh/") {
+				return
+			}
 			title := strings.TrimSpace(s.AttrOr("title", ""))
 			if title == "" {
 				title = strings.TrimSpace(s.Text())
 			}
 			slug := extractSlug(link)
-
-			if slug == "" || title == "" || seen[slug] || len(slug) < 3 {
-				return
+			if slug != "" && title != "" && !seen[slug] && len(slug) > 3 {
+				seen[slug] = true
+				mangas = append(mangas, Manga{
+					Name: title,
+					Slug: slug,
+				})
 			}
-			seen[slug] = true
-			mangas = append(mangas, Manga{
-				Name: title,
-				Slug: slug,
-			})
 		})
+	}
+
+	// Limit results to 20
+	if len(mangas) > 20 {
+		mangas = mangas[:20]
 	}
 
 	return mangas, nil

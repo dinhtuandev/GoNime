@@ -90,9 +90,13 @@ func NewMangaModel(parent MainModel) MangaModel {
 	mgr, _ := config.NewManager()
 
 	cacheDir := ""
+	mangaURL := "https://truyenvn.shop"
 	if mgr != nil {
 		if cfg, err := mgr.LoadConfig(); err == nil {
 			cacheDir = cfg.MangaImageDir
+			if cfg.MangaURL != "" {
+				mangaURL = cfg.MangaURL
+			}
 		}
 	}
 	if cacheDir == "" {
@@ -102,7 +106,7 @@ func NewMangaModel(parent MainModel) MangaModel {
 	return MangaModel{
 		parent:     parent,
 		screen:     mangaScreenTrending,
-		scraper:    scraper.NewMangaScraper("https://truyenvn.shop"),
+		scraper:    scraper.NewMangaScraper(mangaURL),
 		cfgManager: mgr,
 		cacheDir:   cacheDir,
 		termWidth:  100,

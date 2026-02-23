@@ -56,24 +56,27 @@ func (s *MangaScraper) doRequest(reqURL string) (*goquery.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	req.Header.Set("Referer", s.BaseURL)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7")
+	req.Header.Set("Referer", s.BaseURL+"/")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
 
 	resp, err := s.Client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lỗi kết nối: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch: %s", resp.Status)
+		return nil, fmt.Errorf("lỗi HTTP %d khi truy cập %s", resp.StatusCode, reqURL)
 	}
 
 	return goquery.NewDocumentFromReader(resp.Body)
 }
 
+// Search tìm manga theo query — thử nhiều selector để tương thích với thay đổi HTML
 func (s *MangaScraper) Search(query string) ([]Manga, error) {
 	encodedQuery := url.QueryEscape(query)
 	reqURL := s.BaseURL + "/?s=" + encodedQuery
@@ -84,18 +87,52 @@ func (s *MangaScraper) Search(query string) ([]Manga, error) {
 	}
 
 	var mangas []Manga
-	doc.Find(".c-tabs-item__content .post-title a").Each(func(i int, sel *goquery.Selection) {
-		link, _ := sel.Attr("href")
-		title := strings.TrimSpace(sel.Text())
-		slug := extractSlug(link)
+	seen := make(map[string]bool)
 
-		if slug != "" && title != "" {
+	// Danh sách selector ưu tiên — thử từ trên xuống
+	selectorChains := []string{
+		// Madara theme cũ
+		".c-tabs-item__content .post-title a",
+		// Madara theme mới — search results
+		".page-item-detail .post-title a",
+		".row.c-tabs-item__content .post-title a",
+		// Madara generic
+		".post-title h3 a",
+		".post-title a",
+		// Fallback rộng: mọi link dẫn đến /truyen-tranh/
+		"a[href*='/truyen-tranh/']",
+	}
+
+	for _, sel := range selectorChains {
+		doc.Find(sel).Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("href")
+			// Lấy title: ưu tiên attr title, rồi text nội dung
+			title := strings.TrimSpace(s.AttrOr("title", ""))
+			if title == "" {
+				title = strings.TrimSpace(s.Text())
+			}
+			slug := extractSlug(link)
+
+			// Bỏ qua link trống, title trống, hoặc slug chung chung
+			if slug == "" || title == "" || seen[slug] {
+				return
+			}
+			// Bỏ qua nếu slug quá ngắn (thường là thẻ page/category)
+			if len(slug) < 3 {
+				return
+			}
+			seen[slug] = true
 			mangas = append(mangas, Manga{
 				Name: title,
 				Slug: slug,
 			})
+		})
+
+		// Nếu đã tìm thấy kết quả, dừng
+		if len(mangas) > 0 {
+			break
 		}
-	})
+	}
 
 	return mangas, nil
 }
@@ -114,7 +151,7 @@ func (s *MangaScraper) GetDetails(slug string) (*Manga, error) {
 		Slug: slug,
 	}
 
-	doc.Find(".summary__content").Each(func(i int, sel *goquery.Selection) {
+	doc.Find(".summary__content, .description-summary .summary__content").Each(func(i int, sel *goquery.Selection) {
 		manga.Description = strings.TrimSpace(sel.Text())
 	})
 
@@ -140,19 +177,31 @@ func (s *MangaScraper) GetDetails(slug string) (*Manga, error) {
 		manga.Genres = append(manga.Genres, strings.TrimSpace(sel.Text()))
 	})
 
-	doc.Find(".version-chap .chapter-item a, .chapter-list .chapter-item a, .wp-manga-chapter a").Each(func(i int, sel *goquery.Selection) {
-		link, _ := sel.Attr("href")
-		title := strings.TrimSpace(sel.Text())
-		number := extractChapterNumber(title)
+	// Thử nhiều selector cho chapter list
+	chapterSelectors := []string{
+		".version-chap .chapter-item a",
+		".chapter-list .chapter-item a",
+		".wp-manga-chapter a",
+		"li.wp-manga-chapter a",
+	}
+	for _, sel := range chapterSelectors {
+		doc.Find(sel).Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("href")
+			title := strings.TrimSpace(s.Text())
+			number := extractChapterNumber(title)
 
-		if link != "" {
-			manga.Chapters = append(manga.Chapters, Chapter{
-				Number: number,
-				Title:  title,
-				URL:    link,
-			})
+			if link != "" {
+				manga.Chapters = append(manga.Chapters, Chapter{
+					Number: number,
+					Title:  title,
+					URL:    link,
+				})
+			}
+		})
+		if len(manga.Chapters) > 0 {
+			break
 		}
-	})
+	}
 
 	return manga, nil
 }
@@ -184,6 +233,76 @@ func (s *MangaScraper) GetChapterImages(chapterURL string) ([]string, error) {
 	})
 
 	return images, nil
+}
+
+// GetTrending lấy danh sách manga nổi bật từ trang chủ
+func (s *MangaScraper) GetTrending() ([]Manga, error) {
+	doc, err := s.doRequest(s.BaseURL + "/")
+	if err != nil {
+		return nil, err
+	}
+
+	var mangas []Manga
+	seen := make(map[string]bool)
+
+	// Nhiều selector để bắt manga từ trang chủ (slider, latest, popular)
+	selectors := []string{
+		".slider__thumb_item a",
+		".page-item-detail .post-title a",
+		".c-tabs-item__content .post-title a",
+		".manga-title-badges a",
+		".post-title a",
+	}
+
+	for _, sel := range selectors {
+		doc.Find(sel).Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("href")
+			title := strings.TrimSpace(s.AttrOr("title", ""))
+			if title == "" {
+				title = strings.TrimSpace(s.Text())
+			}
+			slug := extractSlug(link)
+
+			if slug == "" || title == "" || seen[slug] || len(slug) < 3 {
+				return
+			}
+			// Chỉ lấy link dẫn đến /truyen-tranh/
+			if !strings.Contains(link, "/truyen-tranh/") {
+				return
+			}
+			seen[slug] = true
+			mangas = append(mangas, Manga{
+				Name: title,
+				Slug: slug,
+			})
+		})
+		if len(mangas) >= 10 {
+			break
+		}
+	}
+
+	// Fallback nếu ít quá
+	if len(mangas) < 5 {
+		doc.Find("a[href*='/truyen-tranh/']").Each(func(i int, s *goquery.Selection) {
+			link, _ := s.Attr("href")
+			title := strings.TrimSpace(s.AttrOr("title", ""))
+			if title == "" {
+				title = strings.TrimSpace(s.Text())
+			}
+			slug := extractSlug(link)
+
+			if slug == "" || title == "" || seen[slug] || len(slug) < 3 {
+				return
+			}
+			seen[slug] = true
+			mangas = append(mangas, Manga{
+				Name: title,
+				Slug: slug,
+			})
+		})
+	}
+
+	return mangas, nil
 }
 
 func (s *MangaScraper) DownloadImage(ctx context.Context, imageURL string, destDir string) (string, error) {
@@ -229,34 +348,6 @@ func (s *MangaScraper) DownloadImage(ctx context.Context, imageURL string, destD
 	limitedReader := io.LimitReader(resp.Body, maxImageSize)
 	_, err = io.Copy(out, limitedReader)
 	return destPath, err
-}
-
-func (s *MangaScraper) GetNewManga() ([]Manga, error) {
-	reqURL := s.BaseURL + "/truyen-tranh/"
-
-	doc, err := s.doRequest(reqURL)
-	if err != nil {
-		return nil, err
-	}
-
-	var mangas []Manga
-	seen := make(map[string]bool)
-
-	doc.Find(".c-tabs-item__content .post-title a, .page-item-detail .post-title a").Each(func(i int, sel *goquery.Selection) {
-		link, _ := sel.Attr("href")
-		title := strings.TrimSpace(sel.Text())
-		slug := extractSlug(link)
-
-		if slug != "" && title != "" && !seen[slug] {
-			seen[slug] = true
-			mangas = append(mangas, Manga{
-				Name: title,
-				Slug: slug,
-			})
-		}
-	})
-
-	return mangas, nil
 }
 
 func extractSlug(rawURL string) string {

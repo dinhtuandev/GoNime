@@ -7,16 +7,22 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"gonime/internal/config"
 	"gonime/internal/render"
 	"gonime/internal/scraper"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // --- Messages ---
 
 type searchMangaMsg struct {
+	results []scraper.Manga
+	err     error
+}
+
+type trendingMangaMsg struct {
 	results []scraper.Manga
 	err     error
 }
@@ -37,7 +43,6 @@ type mangaPlayMsg struct {
 	err error
 }
 
-// chafaRenderMsg mang kết quả render ảnh từ chafa
 type chafaRenderMsg struct {
 	rendered string
 	imageIdx int
@@ -49,7 +54,8 @@ type chafaRenderMsg struct {
 type mangaScreen int
 
 const (
-	mangaScreenSearch   mangaScreen = iota
+	mangaScreenTrending mangaScreen = iota
+	mangaScreenSearch
 	mangaScreenChapters
 	mangaScreenReading
 )
@@ -61,12 +67,13 @@ type MangaModel struct {
 	screen          mangaScreen
 	searchQuery     string
 	mangaList       []scraper.Manga
+	trendingList    []scraper.Manga
 	selectedManga   *scraper.Manga
 	chapterList     []scraper.Chapter
 	currentChapIdx  int
 	images          []string
 	currentImageIdx int
-	renderedImage   string // output ANSI từ chafa
+	renderedImage   string
 	renderLoading   bool
 	index           int
 	loading         bool
@@ -82,7 +89,6 @@ type MangaModel struct {
 func NewMangaModel(parent MainModel) MangaModel {
 	mgr, _ := config.NewManager()
 
-	// Xác định cache dir
 	cacheDir := ""
 	if mgr != nil {
 		if cfg, err := mgr.LoadConfig(); err == nil {
@@ -95,7 +101,7 @@ func NewMangaModel(parent MainModel) MangaModel {
 
 	return MangaModel{
 		parent:     parent,
-		screen:     mangaScreenSearch,
+		screen:     mangaScreenTrending,
 		scraper:    scraper.NewMangaScraper("https://truyenvn.shop"),
 		cfgManager: mgr,
 		cacheDir:   cacheDir,
@@ -105,7 +111,7 @@ func NewMangaModel(parent MainModel) MangaModel {
 }
 
 func (m MangaModel) Init() tea.Cmd {
-	return nil
+	return m.fetchTrending()
 }
 
 func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -114,6 +120,17 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
+
+	case trendingMangaMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.trendingList = msg.results
+		m.index = 0
+		m.err = nil
+		return m, nil
 
 	case searchMangaMsg:
 		m.loading = false
@@ -153,7 +170,6 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renderedImage = ""
 		m.screen = mangaScreenReading
 		m.err = nil
-		// Bắt đầu render ảnh đầu tiên ngay
 		if len(m.images) > 0 {
 			return m, m.renderImageCmd(0)
 		}
@@ -163,7 +179,6 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renderLoading = false
 		if msg.err != nil {
 			m.err = msg.err
-			// Vẫn ở màn reading, hiển thị lỗi
 			return m, nil
 		}
 		if msg.imageIdx == m.currentImageIdx {
@@ -181,20 +196,55 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
-		// ─────────────────────────────────────────
-		// SEARCH SCREEN: mọi ký tự đơn vào search query
-		// ─────────────────────────────────────────
-		if m.screen == mangaScreenSearch {
+		// ─── TRENDING SCREEN ───
+		if m.screen == mangaScreenTrending {
 			switch key {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "esc":
 				return m.parent, nil
+			case "s":
+				m.screen = mangaScreenSearch
+				m.index = 0
+				m.err = nil
+				m.statusMsg = ""
 			case "up", "k":
 				if m.index > 0 {
 					m.index--
 				}
 			case "down", "j":
+				if m.index < len(m.trendingList)-1 {
+					m.index++
+				}
+			case "enter":
+				if len(m.trendingList) > 0 && m.index < len(m.trendingList) {
+					selected := m.trendingList[m.index]
+					m.selectedManga = &selected
+					m.loading = true
+					m.err = nil
+					return m, m.getMangaDetail(selected.Slug)
+				}
+			}
+			return m, nil
+		}
+
+		// ─── SEARCH SCREEN: tất cả ký tự vào query ───
+		if m.screen == mangaScreenSearch {
+			switch key {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				m.screen = mangaScreenTrending
+				m.index = 0
+				m.err = nil
+				m.mangaList = nil
+				m.searchQuery = ""
+				m.statusMsg = ""
+			case "up":
+				if m.index > 0 {
+					m.index--
+				}
+			case "down":
 				if m.index < len(m.mangaList)-1 {
 					m.index++
 				}
@@ -221,7 +271,6 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.searchManga(m.searchQuery)
 				}
 			default:
-				// Tất cả ký tự đơn → gõ vào search
 				runes := []rune(key)
 				if len(runes) == 1 && !m.loading {
 					m.searchQuery += key
@@ -231,9 +280,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// ─────────────────────────────────────────
-		// CHAPTER & READING SCREENS: hotkeys
-		// ─────────────────────────────────────────
+		// ─── CHAPTER & READING SCREENS: hotkeys ───
 		switch key {
 		case "ctrl+c":
 			return m, tea.Quit
@@ -246,7 +293,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.renderedImage = ""
 				m.err = nil
 			case mangaScreenChapters:
-				m.screen = mangaScreenSearch
+				m.screen = mangaScreenTrending
 				m.selectedManga = nil
 				m.chapterList = nil
 				m.index = 0
@@ -317,7 +364,6 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		// 'n' → chapter tiếp theo (mới hơn)
 		case "n":
 			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
 				if m.currentChapIdx > 0 {
@@ -329,7 +375,6 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = "⚠ Đây là chapter mới nhất!"
 			}
 
-		// 'p' → chapter cũ hơn
 		case "p":
 			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
 				if m.currentChapIdx < len(m.chapterList)-1 {
@@ -381,6 +426,13 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // --- Commands ---
 
+func (m MangaModel) fetchTrending() tea.Cmd {
+	return func() tea.Msg {
+		results, err := m.scraper.GetTrending()
+		return trendingMangaMsg{results: results, err: err}
+	}
+}
+
 func (m MangaModel) searchManga(query string) tea.Cmd {
 	return func() tea.Msg {
 		results, err := m.scraper.Search(query)
@@ -403,7 +455,6 @@ func (m MangaModel) loadChapterImages(chapIdx int) tea.Cmd {
 
 		chap := m.chapterList[chapIdx]
 
-		// Lưu lịch sử
 		if m.cfgManager != nil && m.selectedManga != nil {
 			item := config.HistoryItem{
 				Name:      m.selectedManga.Name,
@@ -425,7 +476,6 @@ func (m MangaModel) loadChapterImages(chapIdx int) tea.Cmd {
 	}
 }
 
-// renderImageCmd render ảnh tại index bằng chafa, trả về ANSI string
 func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 	return func() tea.Msg {
 		if imageIdx < 0 || imageIdx >= len(m.images) {
@@ -434,7 +484,6 @@ func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 
 		imageURL := m.images[imageIdx]
 
-		// Tính toán kích thước: trừ đi header, hint, status
 		w := m.termWidth - 2
 		h := m.termHeight - 8
 		if w <= 0 {
@@ -449,7 +498,6 @@ func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 
 		renderer, err := render.NewChafaRenderer(m.cacheDir, w, h)
 		if err != nil {
-			// chafa không có → fallback hiển thị URL
 			return chafaRenderMsg{
 				imageIdx: imageIdx,
 				rendered: fmt.Sprintf("  [Không có chafa - URL ảnh]\n  %s", imageURL),
@@ -466,7 +514,6 @@ func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 	}
 }
 
-// openInViewer download ảnh và mở bằng Default Image Viewer của Windows
 func (m MangaModel) openInViewer(imageIdx int) tea.Cmd {
 	return func() tea.Msg {
 		if imageIdx < 0 || imageIdx >= len(m.images) {
@@ -495,8 +542,7 @@ func (m MangaModel) View() string {
 
 	headerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#33a5f5")).
-		Bold(true).
-		Margin(1, 0)
+		Bold(true)
 
 	selectedStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9f75ff")).
@@ -514,14 +560,9 @@ func (m MangaModel) View() string {
 	successStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#4caf50"))
 
-	inputStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#9f75ff")).
-		Padding(0, 1).
-		Width(56)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#a0a8c8"))
+	badgeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#f5a623")).
+		Bold(true)
 
 	progressStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9f75ff")).
@@ -530,22 +571,57 @@ func (m MangaModel) View() string {
 	switch m.screen {
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// MÀN TÌM KIẾM
+	// TRENDING
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	case mangaScreenTrending:
+		b.WriteString("\n")
+		b.WriteString(headerStyle.Render("  📚 MANGA"))
+		b.WriteString("  ")
+		b.WriteString(badgeStyle.Render("[🔥 Xu hướng]"))
+		b.WriteString("\n\n")
+
+		if m.err != nil {
+			b.WriteString("  ")
+			b.WriteString(errStyle.Render("❌ " + m.err.Error()))
+			b.WriteString("\n")
+		} else if m.loading || len(m.trendingList) == 0 {
+			b.WriteString("  ")
+			b.WriteString(hintStyle.Render("⏳ Đang tải xu hướng..."))
+		} else {
+			for i, manga := range m.trendingList {
+				if i == m.index {
+					b.WriteString(selectedStyle.Render("  ▶ " + manga.Name))
+				} else {
+					b.WriteString(normalStyle.Render("    " + manga.Name))
+				}
+				b.WriteString("\n")
+			}
+		}
+
+		if m.statusMsg != "" {
+			b.WriteString("\n  ")
+			b.WriteString(successStyle.Render(m.statusMsg))
+		}
+
+		b.WriteString("\n\n")
+		b.WriteString(hintStyle.Render("  s: 🔍 Tìm kiếm  │  Enter: Xem  │  ↑↓: Điều hướng  │  Esc: Về menu"))
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// SEARCH
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenSearch:
 		b.WriteString("\n")
-		b.WriteString(headerStyle.Render("📚 TÌM KIẾM MANGA"))
+		b.WriteString(headerStyle.Render("  📚 MANGA"))
+		b.WriteString("  ")
+		b.WriteString(badgeStyle.Render("[🔍 Tìm kiếm]"))
 		b.WriteString("\n\n")
 
 		cursor := "▌"
 		if m.loading {
 			cursor = ""
 		}
-		// Label trên riêng, input box dưới — thẳng hàng
-		b.WriteString(labelStyle.Render("  Nhập tên manga:"))
-		b.WriteString("\n")
-		b.WriteString("  ")
-		b.WriteString(inputStyle.Render(m.searchQuery + cursor))
+
+		b.WriteString(drawInputBox("Nhập tên manga:", m.searchQuery+cursor, 56, "#9f75ff"))
 		b.WriteString("\n\n")
 
 		if m.err != nil {
@@ -557,7 +633,7 @@ func (m MangaModel) View() string {
 			b.WriteString(hintStyle.Render("⏳ Đang tìm kiếm..."))
 		} else if len(m.mangaList) == 0 {
 			b.WriteString("  ")
-			b.WriteString(hintStyle.Render("Gõ tên manga rồi nhấn Enter để tìm kiếm (≥2 ký tự)"))
+			b.WriteString(hintStyle.Render("Gõ tên manga rồi nhấn Enter (≥2 ký tự)"))
 		} else {
 			b.WriteString("  ")
 			b.WriteString(hintStyle.Render(fmt.Sprintf("Tìm thấy %d kết quả:\n", len(m.mangaList))))
@@ -570,26 +646,25 @@ func (m MangaModel) View() string {
 				}
 				b.WriteString("\n")
 			}
-
 		}
 
 		if m.statusMsg != "" {
-			b.WriteString("\n")
+			b.WriteString("\n  ")
 			b.WriteString(successStyle.Render(m.statusMsg))
 		}
 
 		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("  Esc: Quay lại  │  ↑↓/jk: Điều hướng  │  Enter: Tìm/Chọn  │  Ctrl+U: Xóa"))
-
+		b.WriteString(hintStyle.Render("  Esc: Về xu hướng  │  ↑↓: Điều hướng  │  Enter: Tìm/Chọn  │  Ctrl+U: Xóa"))
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// MÀN DANH SÁCH CHAPTER
+	// CHAPTERS
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenChapters:
 		title := "DANH SÁCH CHAPTER"
 		if m.selectedManga != nil {
 			title = fmt.Sprintf("📚 %s", m.selectedManga.Name)
 		}
+		b.WriteString("\n")
 		b.WriteString(headerStyle.Render(title))
 
 		if m.selectedManga != nil {
@@ -654,7 +729,7 @@ func (m MangaModel) View() string {
 		b.WriteString(hintStyle.Render("Esc: Quay lại | ↑/↓: Điều hướng | Enter: Đọc | n: Tiếp | p: Trước | f: Yêu thích"))
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// MÀN ĐỌC MANGA (chính)
+	// READING
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenReading:
 		chapTitle := "ĐỌC CHAPTER"
@@ -662,15 +737,14 @@ func (m MangaModel) View() string {
 			chapTitle = fmt.Sprintf("📖 %s", m.chapterList[m.currentChapIdx].Title)
 		}
 
-		// Header + progress rút gọn
 		total := len(m.images)
 		current := m.currentImageIdx + 1
 		header := fmt.Sprintf("%s  [%d/%d]", chapTitle, current, total)
+		b.WriteString("\n")
 		b.WriteString(headerStyle.Render(header))
 		b.WriteString("\n")
 
 		if m.loading {
-			// Đang tải danh sách ảnh chapter
 			b.WriteString(hintStyle.Render("⏳ Đang tải chapter..."))
 		} else if m.err != nil {
 			b.WriteString(errStyle.Render(fmt.Sprintf("❌ %v", m.err)))
@@ -681,16 +755,13 @@ func (m MangaModel) View() string {
 			b.WriteString("\n")
 			b.WriteString(hintStyle.Render("Esc: Quay lại | w: Mở trong trình duyệt"))
 		} else {
-			// ─── Khu vực hiển thị ảnh ───
 			if m.renderLoading {
 				b.WriteString(progressStyle.Render("  ⏳ Đang render ảnh..."))
 				b.WriteString("\n")
 			} else if m.renderedImage != "" {
-				// Hiển thị ảnh đã render bởi chafa
 				b.WriteString(m.renderedImage)
 				b.WriteString("\n")
 			} else {
-				// chafa không có hoặc chưa render
 				imgURL := m.images[m.currentImageIdx]
 				if len(imgURL) > 80 {
 					imgURL = imgURL[:77] + "..."
@@ -700,7 +771,6 @@ func (m MangaModel) View() string {
 				b.WriteString("\n")
 			}
 
-			// ─── Thanh phím tắt ───
 			chafaStatus := ""
 			if render.IsAvailable() {
 				chafaStatus = " [chafa ✓]"

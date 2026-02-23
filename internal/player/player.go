@@ -31,17 +31,8 @@ func NewPlayer(name string) (*Player, error) {
 	path, err := exec.LookPath(name)
 	if err != nil {
 		// Thử tìm trong các đường dẫn phổ biến trên Windows
-		commonPaths := []string{
-			`C:\Program Files\mpv\mpv.exe`,
-			`C:\Program Files (x86)\mpv\mpv.exe`,
-			`C:\Program Files\VideoLAN\VLC\vlc.exe`,
-			`C:\Program Files (x86)\VideoLAN\VLC\vlc.exe`,
-		}
-		for _, p := range commonPaths {
-			if _, statErr := exec.LookPath(p); statErr == nil {
-				return &Player{Name: name, Path: p}, nil
-			}
-			// Dùng os.Stat cho absolute path
+		searchPaths := getCommonPlayerPaths(name)
+		for _, p := range searchPaths {
 			if checkFileExists(p) {
 				return &Player{Name: name, Path: p}, nil
 			}
@@ -51,14 +42,74 @@ func NewPlayer(name string) (*Player, error) {
 	return &Player{Name: name, Path: path}, nil
 }
 
+// getCommonPlayerPaths trả về danh sách đường dẫn phổ biến cho player trên Windows
+func getCommonPlayerPaths(name string) []string {
+	localAppData := os.Getenv("LOCALAPPDATA")
+	userProfile := os.Getenv("USERPROFILE")
+
+	paths := []string{
+		// Standard Program Files
+		`C:\Program Files\mpv\mpv.exe`,
+		`C:\Program Files (x86)\mpv\mpv.exe`,
+		`C:\Program Files\VideoLAN\VLC\vlc.exe`,
+		`C:\Program Files (x86)\VideoLAN\VLC\vlc.exe`,
+	}
+
+	if localAppData != "" {
+		paths = append(paths,
+			// WinGet symlinks — đây là nơi winget tạo symlink
+			filepath.Join(localAppData, "Microsoft", "WinGet", "Links", "mpv.exe"),
+			filepath.Join(localAppData, "Microsoft", "WinGet", "Links", "vlc.exe"),
+			// WindowsApps aliases — MSIX/Store apps
+			filepath.Join(localAppData, "Microsoft", "WindowsApps", "mpv.exe"),
+			filepath.Join(localAppData, "Microsoft", "WindowsApps", "vlc.exe"),
+			// WinGet Packages (portable) — shinchiro.mpv
+			filepath.Join(localAppData, "Microsoft", "WinGet", "Packages", "shinchiro.mpv_Microsoft.Winget.Source_8wekyb3d8bbwe", "mpv.exe"),
+		)
+	}
+
+	if userProfile != "" {
+		paths = append(paths,
+			// Scoop
+			filepath.Join(userProfile, "scoop", "shims", "mpv.exe"),
+			filepath.Join(userProfile, "scoop", "shims", "vlc.exe"),
+			// Chocolatey
+			filepath.Join(userProfile, "AppData", "Local", "Programs", "mpv", "mpv.exe"),
+		)
+	}
+
+	// Filter theo tên player nếu cần
+	if name == "mpv" || name == "mpv.exe" {
+		var filtered []string
+		for _, p := range paths {
+			if strings.Contains(strings.ToLower(p), "mpv") {
+				filtered = append(filtered, p)
+			}
+		}
+		return filtered
+	}
+	if name == "vlc" || name == "vlc.exe" {
+		var filtered []string
+		for _, p := range paths {
+			if strings.Contains(strings.ToLower(p), "vlc") {
+				filtered = append(filtered, p)
+			}
+		}
+		return filtered
+	}
+
+	return paths
+}
+
 // FindAnyPlayer tìm bất kỳ trình phát nào có sẵn
 func FindAnyPlayer() (*Player, error) {
-	for _, name := range []string{"mpv", "vlc", "mpv.exe", "vlc.exe"} {
+	names := []string{"mpv", "vlc", "mpv.exe", "vlc.exe", "ffplay"}
+	for _, name := range names {
 		if p, err := NewPlayer(name); err == nil {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("không tìm thấy trình phát video nào (mpv, vlc). Vui lòng cài đặt mpv hoặc VLC")
+	return nil, fmt.Errorf("không tìm thấy trình phát video nào (mpv, vlc).\n💡 Cài đặt: winget install shinchiro.mpv\n   hoặc: winget install VideoLAN.VLC")
 }
 
 func checkFileExists(path string) bool {
@@ -74,12 +125,14 @@ func (p *Player) Play(url string, title string) error {
 func (p *Player) PlayWithContext(ctx context.Context, url string, title string) error {
 	var cmd *exec.Cmd
 
-	switch p.Name {
+	baseName := strings.TrimSuffix(filepath.Base(p.Path), ".exe")
+	baseName = strings.ToLower(baseName)
+
+	switch baseName {
 	case "mpv":
 		cmd = exec.CommandContext(ctx, p.Path,
 			url,
-			"--no-terminal",
-			"--force-window",
+			"--force-window=yes",
 			"--title="+title,
 		)
 	case "vlc":
@@ -95,6 +148,18 @@ func (p *Player) PlayWithContext(ctx context.Context, url string, title string) 
 	cmd.Stderr = nil
 
 	return cmd.Start()
+}
+
+// PlayWithBrowser mở URL bằng trình duyệt mặc định (fallback cuối)
+func PlayWithBrowser(url string) error {
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command("cmd", "/c", "start", "", url).Start()
+	case "darwin":
+		return exec.Command("open", url).Start()
+	default:
+		return exec.Command("xdg-open", url).Start()
+	}
 }
 
 func (p *Player) IsRunning() bool {

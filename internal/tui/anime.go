@@ -5,16 +5,23 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"gonime/internal/api"
 	"gonime/internal/config"
 	"gonime/internal/player"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // --- Messages ---
 
 type searchAnimeMsg struct {
+	items  []api.AnimeItem
+	cdnURL string
+	err    error
+}
+
+type trendingAnimeMsg struct {
 	items  []api.AnimeItem
 	cdnURL string
 	err    error
@@ -36,49 +43,62 @@ type playAnimeMsg struct {
 type animeScreen int
 
 const (
-	animeScreenSearch   animeScreen = iota
+	animeScreenTrending animeScreen = iota
+	animeScreenSearch
 	animeScreenEpisodes
 )
 
 // --- Model ---
 
 type AnimeModel struct {
-	parent       MainModel
-	screen       animeScreen
-	searchQuery  string
-	animeList    []api.AnimeItem
-	cdnURL       string
+	parent        MainModel
+	screen        animeScreen
+	searchQuery   string
+	animeList     []api.AnimeItem
+	trendingList  []api.AnimeItem
+	cdnURL        string
 	selectedAnime *api.AnimeItem
-	movie        *api.MovieInfo
-	// Multi-server support
-	servers      []api.EpisodeServer
-	serverIdx    int
-	episodeList  []api.EpisodeData
-	currentEpIdx int
-	index        int
-	loading      bool
-	err          error
-	client       *api.AnimeClient
-	cfgManager   *config.Manager
-	statusMsg    string
+	movie         *api.MovieInfo
+	servers       []api.EpisodeServer
+	serverIdx     int
+	episodeList   []api.EpisodeData
+	currentEpIdx  int
+	index         int
+	loading       bool
+	err           error
+	client        *api.AnimeClient
+	cfgManager    *config.Manager
+	statusMsg     string
 }
 
 func NewAnimeModel(parent MainModel) AnimeModel {
 	mgr, _ := config.NewManager()
 	return AnimeModel{
 		parent:     parent,
-		screen:     animeScreenSearch,
+		screen:     animeScreenTrending,
 		client:     api.NewAnimeClient(),
 		cfgManager: mgr,
 	}
 }
 
 func (m AnimeModel) Init() tea.Cmd {
-	return nil
+	return m.fetchTrending()
 }
 
 func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case trendingAnimeMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.trendingList = msg.items
+		m.cdnURL = msg.cdnURL
+		m.index = 0
+		m.err = nil
+		return m, nil
 
 	case searchAnimeMsg:
 		m.loading = false
@@ -112,7 +132,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			if m.index < len(m.episodeList) {
+			if m.currentEpIdx < len(m.episodeList) {
 				m.statusMsg = fmt.Sprintf("▶ Đang phát tập %s", m.episodeList[m.currentEpIdx].Name)
 			}
 		}
@@ -121,20 +141,56 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
-		// ─────────────────────────────────────────
-		// SEARCH SCREEN: mọi ký tự đều vào search query
-		// ─────────────────────────────────────────
-		if m.screen == animeScreenSearch {
+		// ─── TRENDING SCREEN ───
+		if m.screen == animeScreenTrending {
 			switch key {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "esc":
 				return m.parent, nil
+			case "s":
+				m.screen = animeScreenSearch
+				m.index = 0
+				m.err = nil
+				m.statusMsg = ""
 			case "up", "k":
 				if m.index > 0 {
 					m.index--
 				}
 			case "down", "j":
+				if m.index < len(m.trendingList)-1 {
+					m.index++
+				}
+			case "enter":
+				if len(m.trendingList) > 0 && m.index < len(m.trendingList) {
+					selected := m.trendingList[m.index]
+					m.selectedAnime = &selected
+					m.loading = true
+					m.err = nil
+					return m, m.loadEpisodes(selected.Slug)
+				}
+			}
+			return m, nil
+		}
+
+		// ─── SEARCH SCREEN: tất cả ký tự vào query ───
+		if m.screen == animeScreenSearch {
+			switch key {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				// Về trending thay vì về menu
+				m.screen = animeScreenTrending
+				m.index = 0
+				m.err = nil
+				m.animeList = nil
+				m.searchQuery = ""
+				m.statusMsg = ""
+			case "up":
+				if m.index > 0 {
+					m.index--
+				}
+			case "down":
 				if m.index < len(m.animeList)-1 {
 					m.index++
 				}
@@ -144,7 +200,6 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.searchQuery = string(runes[:len(runes)-1])
 				}
 			case "ctrl+u":
-				// Xóa toàn bộ query
 				m.searchQuery = ""
 				m.animeList = nil
 			case "enter":
@@ -162,7 +217,6 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.searchAnime(m.searchQuery)
 				}
 			default:
-				// Tất cả ký tự đơn → gõ vào search
 				runes := []rune(key)
 				if len(runes) == 1 && !m.loading {
 					m.searchQuery += key
@@ -172,15 +226,12 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// ─────────────────────────────────────────
-		// EPISODE SCREEN: hotkeys điều hướng
-		// ─────────────────────────────────────────
+		// ─── EPISODE SCREEN: hotkeys ───
 		switch key {
 		case "ctrl+c":
 			return m, tea.Quit
-
 		case "esc":
-			m.screen = animeScreenSearch
+			m.screen = animeScreenTrending
 			m.selectedAnime = nil
 			m.movie = nil
 			m.servers = nil
@@ -188,17 +239,14 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.index = 0
 			m.err = nil
 			m.statusMsg = ""
-
 		case "up", "k":
 			if m.index > 0 {
 				m.index--
 			}
-
 		case "down", "j":
 			if m.index < len(m.episodeList)-1 {
 				m.index++
 			}
-
 		case "enter":
 			if len(m.episodeList) > 0 && m.index < len(m.episodeList) {
 				m.currentEpIdx = m.index
@@ -206,8 +254,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.err = nil
 				return m, m.playEpisode(m.index)
 			}
-
-		case "n": // Tập tiếp theo
+		case "n":
 			if m.currentEpIdx < len(m.episodeList)-1 {
 				m.currentEpIdx++
 				m.index = m.currentEpIdx
@@ -215,8 +262,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.playEpisode(m.currentEpIdx)
 			}
 			m.statusMsg = "⚠ Đây là tập cuối!"
-
-		case "p": // Tập trước
+		case "p":
 			if m.currentEpIdx > 0 {
 				m.currentEpIdx--
 				m.index = m.currentEpIdx
@@ -224,8 +270,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.playEpisode(m.currentEpIdx)
 			}
 			m.statusMsg = "⚠ Đây là tập đầu!"
-
-		case "s": // Đổi server
+		case "s":
 			if len(m.servers) > 1 {
 				m.serverIdx = (m.serverIdx + 1) % len(m.servers)
 				m.episodeList = currentServerEpisodes(m.servers, m.serverIdx)
@@ -235,8 +280,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.statusMsg = "Chỉ có 1 server"
 			}
-
-		case "f": // Yêu thích
+		case "f":
 			if m.selectedAnime != nil && m.cfgManager != nil {
 				item := config.FavoriteItem{
 					Name: m.selectedAnime.Name,
@@ -253,7 +297,6 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// currentServerEpisodes lấy episodes của server theo index
 func currentServerEpisodes(servers []api.EpisodeServer, idx int) []api.EpisodeData {
 	if len(servers) == 0 || idx >= len(servers) {
 		return nil
@@ -262,6 +305,13 @@ func currentServerEpisodes(servers []api.EpisodeServer, idx int) []api.EpisodeDa
 }
 
 // --- Commands ---
+
+func (m AnimeModel) fetchTrending() tea.Cmd {
+	return func() tea.Msg {
+		items, cdnURL, err := m.client.GetTrending(1)
+		return trendingAnimeMsg{items: items, cdnURL: cdnURL, err: err}
+	}
+}
 
 func (m AnimeModel) searchAnime(query string) tea.Cmd {
 	return func() tea.Msg {
@@ -276,7 +326,6 @@ func (m AnimeModel) loadEpisodes(slug string) tea.Cmd {
 		if err != nil {
 			return loadEpisodesMsg{err: err}
 		}
-		// Chọn server tốt nhất (có m3u8)
 		bestIdx := 0
 		for i, srv := range servers {
 			for _, ep := range srv.ServerData {
@@ -310,6 +359,19 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 			return playAnimeMsg{err: fmt.Errorf("không tìm thấy link phát cho tập này")}
 		}
 
+		// Lưu lịch sử trước
+		if m.cfgManager != nil && m.selectedAnime != nil {
+			item := config.HistoryItem{
+				Name:      m.selectedAnime.Name,
+				Episode:   "Tập " + ep.Name,
+				URL:       link,
+				Type:      "anime",
+				Timestamp: time.Now().Format("2006-01-02 15:04"),
+			}
+			_ = m.cfgManager.AddToHistory(item)
+		}
+
+		// Tìm player
 		var playerName = player.GetDefaultPlayer()
 		if m.cfgManager != nil {
 			if cfg, err := m.cfgManager.LoadConfig(); err == nil && cfg.Player != "" {
@@ -324,26 +386,20 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 		}
 		if p == nil || err != nil {
 			p, err = player.FindAnyPlayer()
-			if err != nil {
-				return playAnimeMsg{err: fmt.Errorf("%v", err)}
+		}
+
+		if p == nil || err != nil {
+			// Fallback: mở bằng trình duyệt
+			browserErr := player.PlayWithBrowser(link)
+			if browserErr != nil {
+				return playAnimeMsg{err: fmt.Errorf("không tìm thấy player và không mở được trình duyệt: %v", browserErr)}
 			}
+			return playAnimeMsg{err: nil}
 		}
 
 		title := "GoNime"
 		if m.selectedAnime != nil {
 			title = fmt.Sprintf("GoNime: %s - Tập %s", m.selectedAnime.Name, ep.Name)
-		}
-
-		// Lưu lịch sử
-		if m.cfgManager != nil && m.selectedAnime != nil {
-			item := config.HistoryItem{
-				Name:      m.selectedAnime.Name,
-				Episode:   "Tập " + ep.Name,
-				URL:       link,
-				Type:      "anime",
-				Timestamp: time.Now().Format("2006-01-02 15:04"),
-			}
-			_ = m.cfgManager.AddToHistory(item)
 		}
 
 		err = p.Play(link, title)
@@ -376,35 +432,69 @@ func (m AnimeModel) View() string {
 	successStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#4caf50"))
 
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#a0a8c8"))
-
-	// ── Input box style: bordered, full width feel ──
-	inputBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#9f75ff")).
-		Padding(0, 1).
-		Width(56)
+	badgeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#f5a623")).
+		Bold(true)
 
 	switch m.screen {
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// MÀN TÌM KIẾM
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	case animeScreenSearch:
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// TRENDING SCREEN
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	case animeScreenTrending:
 		b.WriteString("\n")
-		b.WriteString(headerStyle.Render("📺 TÌM KIẾM ANIME"))
+		b.WriteString(headerStyle.Render("  📺 ANIME"))
+		b.WriteString("  ")
+		b.WriteString(badgeStyle.Render("[🔥 Xu hướng]"))
 		b.WriteString("\n\n")
 
-		// Label trên, input box dưới — căn chỉnh rõ ràng
+		if m.err != nil {
+			b.WriteString("  ")
+			b.WriteString(errStyle.Render("❌ " + m.err.Error()))
+			b.WriteString("\n")
+		} else if m.loading || len(m.trendingList) == 0 {
+			b.WriteString("  ")
+			b.WriteString(hintStyle.Render("⏳ Đang tải xu hướng..."))
+		} else {
+			for i, anime := range m.trendingList {
+				yearStr := ""
+				if anime.Year > 0 {
+					yearStr = fmt.Sprintf(" (%d)", anime.Year)
+				}
+				line := anime.Name + yearStr
+				if i == m.index {
+					b.WriteString(selectedStyle.Render("  ▶ " + line))
+				} else {
+					b.WriteString(normalStyle.Render("    " + line))
+				}
+				b.WriteString("\n")
+			}
+		}
+
+		if m.statusMsg != "" {
+			b.WriteString("\n  ")
+			b.WriteString(successStyle.Render(m.statusMsg))
+		}
+
+		b.WriteString("\n\n")
+		b.WriteString(hintStyle.Render("  s: 🔍 Tìm kiếm  │  Enter: Xem  │  ↑↓: Điều hướng  │  Esc: Về menu"))
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// SEARCH SCREEN
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	case animeScreenSearch:
+		b.WriteString("\n")
+		b.WriteString(headerStyle.Render("  📺 ANIME"))
+		b.WriteString("  ")
+		b.WriteString(badgeStyle.Render("[🔍 Tìm kiếm]"))
+		b.WriteString("\n\n")
+
 		cursor := "▌"
 		if m.loading {
 			cursor = ""
 		}
-		b.WriteString(labelStyle.Render("  Nhập tên anime:"))
-		b.WriteString("\n")
-		b.WriteString("  ")
-		b.WriteString(inputBoxStyle.Render(m.searchQuery + cursor))
+
+		b.WriteString(drawInputBox("Nhập tên anime:", m.searchQuery+cursor, 56, "#9f75ff"))
 		b.WriteString("\n\n")
 
 		if m.err != nil {
@@ -416,10 +506,10 @@ func (m AnimeModel) View() string {
 			b.WriteString(hintStyle.Render("⏳ Đang tìm kiếm..."))
 		} else if len(m.animeList) == 0 {
 			b.WriteString("  ")
-			b.WriteString(hintStyle.Render("Gõ tên anime rồi nhấn Enter để tìm kiếm (≥2 ký tự)"))
+			b.WriteString(hintStyle.Render("Gõ tên anime rồi nhấn Enter (≥2 ký tự)"))
 		} else {
 			b.WriteString("  ")
-			b.WriteString(hintStyle.Render(fmt.Sprintf("Tìm thấy %d kết quả — Enter để chọn:\n", len(m.animeList))))
+			b.WriteString(hintStyle.Render(fmt.Sprintf("Tìm thấy %d kết quả:\n", len(m.animeList))))
 			b.WriteString("\n")
 			for i, anime := range m.animeList {
 				yearStr := ""
@@ -442,15 +532,14 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("  Esc: Quay lại  │  ↑↓/jk: Điều hướng  │  Enter: Tìm/Chọn  │  Ctrl+U: Xóa"))
+		b.WriteString(hintStyle.Render("  Esc: Về xu hướng  │  ↑↓: Điều hướng  │  Enter: Tìm/Chọn  │  Ctrl+U: Xóa"))
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// MÀN DANH SÁCH TẬP
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// EPISODES SCREEN
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case animeScreenEpisodes:
 		b.WriteString("\n")
 
-		// Tiêu đề phim
 		title := "DANH SÁCH TẬP"
 		if m.selectedAnime != nil {
 			title = "📺 " + m.selectedAnime.Name
@@ -458,7 +547,6 @@ func (m AnimeModel) View() string {
 		b.WriteString(headerStyle.Render(title))
 		b.WriteString("\n")
 
-		// Thông tin phim + server hiện tại
 		if m.movie != nil {
 			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#606880"))
 			parts := []string{}
@@ -476,7 +564,6 @@ func (m AnimeModel) View() string {
 			}
 		}
 
-		// Server selector
 		if len(m.servers) > 0 {
 			serverStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f5a623")).Bold(true)
 			currentServer := "?"
@@ -503,8 +590,6 @@ func (m AnimeModel) View() string {
 			b.WriteString(hintStyle.Render("Không có tập nào."))
 		} else {
 			total := len(m.episodeList)
-
-			// Viewport: 20 tập, cuộn theo index
 			start := 0
 			if m.index > 10 {
 				start = m.index - 10
@@ -514,7 +599,6 @@ func (m AnimeModel) View() string {
 				end = total
 			}
 
-			// Hiển thị dạng grid 3 cột nếu nhiều tập
 			if total > 30 {
 				m.renderEpisodeGrid(&b, start, end, selectedStyle, normalStyle, successStyle)
 			} else {
@@ -547,11 +631,9 @@ func (m AnimeModel) View() string {
 	return b.String()
 }
 
-// renderEpisodeList hiển thị danh sách tập dạng list dọc (ít tập)
 func (m *AnimeModel) renderEpisodeList(b *strings.Builder, start, end int, sel, norm, ok lipgloss.Style) {
 	for i := start; i < end; i++ {
 		ep := m.episodeList[i]
-		marker := "  "
 		line := fmt.Sprintf("Tập %s", ep.Name)
 
 		if i == m.currentEpIdx {
@@ -561,14 +643,12 @@ func (m *AnimeModel) renderEpisodeList(b *strings.Builder, start, end int, sel, 
 		if i == m.index {
 			b.WriteString(sel.Render("  ▶ " + line))
 		} else {
-			marker = "    "
-			b.WriteString(norm.Render(marker + line))
+			b.WriteString(norm.Render("    " + line))
 		}
 		b.WriteString("\n")
 	}
 }
 
-// renderEpisodeGrid hiển thị dạng grid nhiều cột (nhiều tập)
 func (m *AnimeModel) renderEpisodeGrid(b *strings.Builder, start, end int, sel, norm, ok lipgloss.Style) {
 	cols := 5
 	colWidth := 14

@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"gonime/internal/config"
+	"gonime/internal/player"
+	"gonime/internal/render"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"gonime/internal/config"
 )
 
 type settingsField int
@@ -16,18 +19,24 @@ const (
 	settingsFieldDownloadDir
 	settingsFieldMangaDir
 	settingsFieldMangaImageSize
+	settingsFieldMangaURL
 )
 
 type SettingsModel struct {
-	parent      MainModel
-	cfg         *config.Config
-	manager     *config.Manager
-	index       int
+	parent       MainModel
+	cfg          *config.Config
+	manager      *config.Manager
+	index        int
 	editingField settingsField
-	isEditing   bool
-	editBuffer  string
-	err         error
-	statusMsg   string
+	isEditing    bool
+	editBuffer   string
+	err          error
+	statusMsg    string
+
+	// Trạng thái dependency
+	hasMPV   bool
+	hasVLC   bool
+	hasChafa bool
 }
 
 var settingsLabels = []string{
@@ -35,16 +44,34 @@ var settingsLabels = []string{
 	"📁 Thư mục tải xuống",
 	"🖼  Thư mục ảnh manga",
 	"📐 Kích thước ảnh manga (%)",
+	"🌐 URL nguồn Manga",
 }
 
 func NewSettingsModel(parent MainModel) SettingsModel {
 	mgr, _ := config.NewManager()
 	cfg, _ := mgr.LoadConfig()
-	return SettingsModel{
+	m := SettingsModel{
 		parent:  parent,
 		cfg:     cfg,
 		manager: mgr,
 	}
+	m.checkDependencies()
+	return m
+}
+
+func (m *SettingsModel) checkDependencies() {
+	// Check players using internal logic
+	if p, err := player.NewPlayer("mpv"); err == nil && p != nil {
+		m.hasMPV = true
+	}
+	if p, err := player.NewPlayer("vlc"); err == nil && p != nil {
+		m.hasVLC = true
+	} else if p, err := player.NewPlayer("vlc.exe"); err == nil && p != nil {
+		m.hasVLC = true
+	}
+
+	// Check chafa
+	m.hasChafa = render.IsAvailable()
 }
 
 func (m SettingsModel) Init() tea.Cmd {
@@ -64,6 +91,8 @@ func (m SettingsModel) getCurrentValue() string {
 		return m.cfg.MangaImageDir
 	case settingsFieldMangaImageSize:
 		return fmt.Sprintf("%d", m.cfg.MangaImageSize)
+	case settingsFieldMangaURL:
+		return m.cfg.MangaURL
 	}
 	return ""
 }
@@ -102,6 +131,12 @@ func (m *SettingsModel) applyEdit() error {
 			return fmt.Errorf("kích thước phải từ 50 đến 200")
 		}
 		m.cfg.MangaImageSize = size
+
+	case settingsFieldMangaURL:
+		if val == "" {
+			return fmt.Errorf("URL không được để trống")
+		}
+		m.cfg.MangaURL = val
 	}
 
 	// Lưu config
@@ -138,7 +173,8 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case "backspace":
 				if len(m.editBuffer) > 0 {
-					m.editBuffer = m.editBuffer[:len(m.editBuffer)-1]
+					runes := []rune(m.editBuffer)
+					m.editBuffer = string(runes[:len(runes)-1])
 				}
 
 			case "ctrl+c":
@@ -193,8 +229,7 @@ func (m SettingsModel) View() string {
 
 	headerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#33a5f5")).
-		Bold(true).
-		Margin(1, 0)
+		Bold(true)
 
 	selectedStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9f75ff")).
@@ -203,11 +238,8 @@ func (m SettingsModel) View() string {
 	normalStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#f0f4ff"))
 
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#33a5f5"))
-
 	hintStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#a0a8c8"))
+		Foreground(lipgloss.Color("#606880"))
 
 	errStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#ff6b6b"))
@@ -215,69 +247,89 @@ func (m SettingsModel) View() string {
 	successStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#4caf50"))
 
-	editingInputStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("#9f75ff")).
-		Padding(0, 1).
-		Width(50)
+	statusLabelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#a0a8c8"))
 
-	b.WriteString(headerStyle.Render("⚙️ CÀI ĐẶT"))
+	b.WriteString("\n")
+	b.WriteString(headerStyle.Render("  ⚙️ CÀI ĐẶT"))
 	b.WriteString("\n\n")
 
 	if m.cfg == nil {
-		b.WriteString(errStyle.Render("❌ Không thể tải cấu hình."))
+		b.WriteString("  " + errStyle.Render("❌ Không thể tải cấu hình."))
 		return b.String()
 	}
 
+	// ─── PHẦN KIỂM TRA HỆ THỐNG ───
+	b.WriteString(statusLabelStyle.Render("  🔍 KIỂM TRA HỆ THỐNG:"))
+	b.WriteString("\n")
+
+	checkItem := func(name string, has bool) string {
+		if has {
+			return successStyle.Render(fmt.Sprintf("    ✓ %-8s: Sẵn sàng", name))
+		}
+		return errStyle.Render(fmt.Sprintf("    ✗ %-8s: Chưa thấy", name))
+	}
+
+	b.WriteString(checkItem("mpv", m.hasMPV))
+	b.WriteString("\n")
+	b.WriteString(checkItem("VLC", m.hasVLC))
+	b.WriteString("\n")
+	b.WriteString(checkItem("chafa", m.hasChafa))
+	if !m.hasChafa {
+		b.WriteString(hintStyle.Render(" (để xem manga)"))
+	}
+	b.WriteString("\n\n")
+
+	// ─── PHẦN DANH SÁCH CÀI ĐẶT ───
 	values := []string{
 		m.cfg.Player,
 		m.cfg.DownloadDir,
 		m.cfg.MangaImageDir,
 		fmt.Sprintf("%d%%", m.cfg.MangaImageSize),
+		m.cfg.MangaURL,
 	}
 
 	for i, label := range settingsLabels {
 		isSelected := i == m.index
 
 		if isSelected && m.isEditing {
-			// Đang chỉnh sửa trường này
-			b.WriteString(selectedStyle.Render("▶ " + label))
-			b.WriteString("\n")
-			b.WriteString("  ")
-			b.WriteString(editingInputStyle.Render(m.editBuffer + "▌"))
-			b.WriteString("\n")
-		} else if isSelected {
-			b.WriteString(selectedStyle.Render(fmt.Sprintf("▶ %s", label)))
-			b.WriteString("\n")
-			b.WriteString("  ")
-			b.WriteString(valueStyle.Render(values[i]))
+			// Đang chỉnh sửa
+			b.WriteString(drawInputBox(label, m.editBuffer+"▌", 56, "#9f75ff"))
 			b.WriteString("\n")
 		} else {
-			b.WriteString(normalStyle.Render(fmt.Sprintf("  %s", label)))
-			b.WriteString("\n")
-			b.WriteString("  ")
-			b.WriteString(hintStyle.Render(values[i]))
+			// Hiển thị bình thường
+			marker := "  "
+			titleColor := normalStyle
+			valColor := hintStyle
+
+			if isSelected {
+				marker = "▶ "
+				titleColor = selectedStyle
+				valColor = lipgloss.NewStyle().Foreground(lipgloss.Color("#33a5f5"))
+			}
+
+			b.WriteString(fmt.Sprintf("  %s%s\n", marker, titleColor.Render(label)))
+			b.WriteString(fmt.Sprintf("    %s\n", valColor.Render(values[i])))
 			b.WriteString("\n")
 		}
-		b.WriteString("\n")
 	}
 
 	if m.err != nil {
-		b.WriteString(errStyle.Render(fmt.Sprintf("❌ %v", m.err)))
+		b.WriteString("  " + errStyle.Render(fmt.Sprintf("❌ %v", m.err)))
 		b.WriteString("\n")
 	}
 
 	if m.statusMsg != "" {
-		b.WriteString(successStyle.Render(m.statusMsg))
+		b.WriteString("  " + successStyle.Render(m.statusMsg))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 
 	if m.isEditing {
-		b.WriteString(hintStyle.Render("Enter: Lưu | Esc: Hủy | Backspace: Xóa ký tự"))
+		b.WriteString(hintStyle.Render("  Enter: Lưu  │  Esc: Hủy  │  Backspace: Xóa"))
 	} else {
-		b.WriteString(hintStyle.Render("Esc: Quay lại | ↑/↓: Điều hướng | Enter: Chỉnh sửa | r: Đặt lại mặc định"))
+		b.WriteString(hintStyle.Render("  Esc: Quay lại  │  ↑↓/jk: Điều hướng  │  Enter: Chỉnh sửa  │  r: Mặc định"))
 	}
 
 	return b.String()

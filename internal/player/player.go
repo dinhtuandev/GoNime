@@ -27,19 +27,56 @@ type Downloader struct {
 	YTDLPPath string
 }
 
+// NewPlayer tạo player với detection nâng cao
 func NewPlayer(name string) (*Player, error) {
+	// Thử tìm trước bằng exec.LookPath
 	path, err := exec.LookPath(name)
-	if err != nil {
-		// Thử tìm trong các đường dẫn phổ biến trên Windows
-		searchPaths := getCommonPlayerPaths(name)
-		for _, p := range searchPaths {
+	if err == nil {
+		return &Player{Name: name, Path: path}, nil
+	}
+
+	// Thêm detection cho Windows Store/MSIX packages
+	if runtime.GOOS == "windows" {
+		// Thử tìm trong WindowsApps (MSIX packages)
+		windowsApps := filepath.Join(os.Getenv("ProgramFiles"), "WindowsApps")
+		if checkFileExists(windowsApps) {
+			// Tìm kiếm các ứng dụng mpv và vlc trong WindowsApps
+			searchPaths := []string{
+				filepath.Join(windowsApps, "mpv*.exe"),
+				filepath.Join(windowsApps, "vlc*.exe"),
+			}
+			for _, pattern := range searchPaths {
+				matches, _ := filepath.Glob(pattern)
+				if len(matches) > 0 {
+					return &Player{Name: name, Path: matches[0]}, nil
+				}
+			}
+		}
+	}
+
+	// Thử tìm trong các đường dẫn phổ biến trên Windows
+	searchPaths := getCommonPlayerPaths(name)
+	for _, p := range searchPaths {
+		if checkFileExists(p) {
+			return &Player{Name: name, Path: p}, nil
+		}
+	}
+
+	// Thêm fallback cho Windows Store apps
+	if runtime.GOOS == "windows" {
+		// Thử tìm trong Microsoft Store apps
+		storePaths := []string{
+			`C:\Program Files\WindowsApps\Microsoft.Mpv_1.0.0.0_x64__8wekyb3d8bbwe\mpv.exe`,
+			`C:\Program Files\WindowsApps\VideoLAN.VLC_3.0.16.0_x64__ql6h4bf0d3p0t\vlc.exe`,
+		}
+		for _, p := range storePaths {
 			if checkFileExists(p) {
 				return &Player{Name: name, Path: p}, nil
 			}
 		}
-		return nil, fmt.Errorf("không tìm thấy trình phát %s: %v", name, err)
 	}
-	return &Player{Name: name, Path: path}, nil
+
+	return nil, fmt.Errorf("không tìm thấy trình phát %s: %v", name, err)
 }
 
 // getCommonPlayerPaths trả về danh sách đường dẫn phổ biến cho player trên Windows
@@ -109,7 +146,7 @@ func FindAnyPlayer() (*Player, error) {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("không tìm thấy trình phát video nào (mpv, vlc).\n💡 Cài đặt: winget install shinchiro.mpv\n   hoặc: winget install VideoLAN.VLC")
+	return nil, fmt.Errorf("không tìm thấy trình phát video nào (mpv, vlc).\n\n💡 Cài đặt:\n  winget install shinchiro.mpv\n  winget install VideoLAN.VLC\n  scoop install mpv\n  choco install mpv\n\nĐể xem anime, bạn cần cài đặt một trong các trình phát này.")
 }
 
 func checkFileExists(path string) bool {
@@ -122,6 +159,7 @@ func (p *Player) Play(url string, title string) error {
 	return p.PlayWithContext(ctx, url, title)
 }
 
+// PlayWithContext cải thiện flags cho Windows
 func (p *Player) PlayWithContext(ctx context.Context, url string, title string) error {
 	var cmd *exec.Cmd
 
@@ -130,15 +168,21 @@ func (p *Player) PlayWithContext(ctx context.Context, url string, title string) 
 
 	switch baseName {
 	case "mpv":
+		// Cải thiện flags cho Windows
 		cmd = exec.CommandContext(ctx, p.Path,
 			url,
 			"--force-window=yes",
 			"--title="+title,
+			"--no-terminal",
+			"--geometry=640x480",
 		)
 	case "vlc":
+		// Cải thiện flags cho Windows
 		cmd = exec.CommandContext(ctx, p.Path,
 			url,
 			"--meta-title="+title,
+			"--qt-start-minimized",
+			"--qt-notification=0",
 		)
 	default:
 		cmd = exec.CommandContext(ctx, p.Path, url)
@@ -146,7 +190,6 @@ func (p *Player) PlayWithContext(ctx context.Context, url string, title string) 
 
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-
 	return cmd.Start()
 }
 

@@ -9,7 +9,7 @@ type scraper_iface interface {
 }
 
 type mangaScraperAdapter struct {
-	s *scraper.MangaScraper
+	s scraper.MangaSource
 }
 
 func (a *mangaScraperAdapter) GetDetails(slug string) (*scraper.Manga, error) {
@@ -18,6 +18,6 @@ func (a *mangaScraperAdapter) GetDetails(slug string) (*scraper.Manga, error) {
 
 func newScraper() scraper_iface {
 	return &mangaScraperAdapter{
-		s: scraper.NewMangaScraper("https://truyenvn.shop"),
+		s: scraper.GetMangaSource("truyenvn"),
 	}
 }

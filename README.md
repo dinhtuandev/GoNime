@@ -1,8 +1,6 @@
-<div align="center">
-
 # 🎌 GoNime
 
-**Xem Anime & Đọc Manga ngay trên Terminal — Viết bằng Go**
+**Xem Anime, Phim & Đọc Manga ngay trên Terminal — Viết bằng Go**
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
@@ -18,43 +16,22 @@
     ╚═════╝   ╚═════╝  ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝ ╚══════╝
 ```
 
-_Lấy cảm hứng từ [anisub](https://github.com/niyakipham/anisub) — nâng cấp lên Go native với TUI đẹp hơn, nhanh hơn, đa nền tảng_
-
-</div>
-
 ---
 
 ## ✨ Tính năng
 
-| Tính năng              | Chi tiết                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| 📺 **Xem Anime**       | Tìm kiếm & phát qua `phimapi.com`, stream M3U8 trực tiếp bằng mpv/VLC               |
-| 📚 **Đọc Manga**       | Tìm kiếm & đọc từ `truyenvn.shop`, render ảnh trực tiếp trong terminal bằng `chafa` |
-| 🖼 **Chafa Rendering** | Hiển thị ảnh manga dưới dạng ASCII/Unicode art ngay trong terminal                  |
-| 📜 **Lịch sử**         | Tự động lưu lịch sử xem/đọc, phát lại bằng một phím                                 |
-| ⭐ **Yêu thích**       | Thêm/xóa anime & manga yêu thích, mở nhanh                                          |
-| ⚙️ **Cài đặt**         | Chỉnh sửa player, thư mục tải, kích thước ảnh trực tiếp trong TUI                   |
-| 🎮 **TUI đẹp**         | Giao diện terminal đầy đủ bằng BubbleTea + Lipgloss                                 |
-| 🖥️ **CLI commands**    | `gonime anime`, `gonime manga`, `gonime history list/play/clear`                    |
-
----
-
-## 🖼 Giao diện
-
-```
-╔══════════════════════════════════════════════════════╗
-║  🎌 GoNime                                           ║
-║                                                      ║
-║  ▶ 📺 Xem Anime                                      ║
-║    📚 Đọc Manga                                      ║
-║    📜 Lịch sử                                        ║
-║    ⭐ Yêu thích                                      ║
-║    ⚙️  Cài đặt                                       ║
-║    🚪 Thoát                                          ║
-║                                                      ║
-║  ↑/↓: Điều hướng  Enter: Chọn  q: Thoát             ║
-╚══════════════════════════════════════════════════════╝
-```
+| Tính năng | Chi tiết |
+| ---------- | --------- |
+| 🎬 **Xem Phim/Anime** | Tìm kiếm & phát từ 3 nguồn: PhimAPI, OPhim, NguonC |
+| 📚 **Đọc Manga** | Tìm kiếm & đọc từ 2 nguồn: TruyenVN, TruyenQQ |
+| 🖼 **Thumbnail Rendering** | Hiển thị thumbnail trong CLI bằng chafa |
+| 📖 **Full Manga Viewer** | Mở manga trong cửa sổ riêng với Wails |
+| 🔖 **Chapter Navigation** | Chuyển chapter dễ dàng trong viewer |
+| 📜 **Lịch sử** | Tự động lưu lịch sử xem/đọc |
+| ⭐ **Yêu thích** | Thêm/xóa phim & manga yêu thích |
+| ⚙️ **Cài đặt** | Chỉnh sửa player, thư mục cache trong TUI |
+| 🎮 **TUI Hiện đại** | Giao diện Modern Dark với BubbleTea + Lipgloss |
+| 💻 **CLI Commands** | `gonime anime`, `gonime manga`, `gonime history` |
 
 ---
 
@@ -62,24 +39,15 @@ _Lấy cảm hứng từ [anisub](https://github.com/niyakipham/anisub) — nân
 
 ### Yêu cầu
 
-| Công cụ              | Dùng cho                                        | Cài đặt                                                 |
-| -------------------- | ----------------------------------------------- | ------------------------------------------------------- |
-| **mpv** hoặc **VLC** | Phát anime (bắt buộc)                           | `winget install mpv` hoặc `winget install VideoLAN.VLC` |
-| **chafa**            | Hiển thị ảnh manga trong terminal (khuyến nghị) | `winget install hpjansson.Chafa`                        |
-| **yt-dlp**           | Tải video (tùy chọn)                            | `winget install yt-dlp`                                 |
+| Công cụ | Dùng cho | Cài đặt |
+| ------- | -------- | ------- |
+| **mpv** hoặc **VLC** | Phát video (bắt buộc) | `winget install mpv` hoặc `winget install VideoLAN.VLC` |
+| **chafa** | Hiển thị thumbnail (khuyến nghị) | `winget install hpjansson.Chafa` |
+| **yt-dlp** | Tải video (tùy chọn) | `winget install yt-dlp` |
 
 > **Windows Terminal** hoặc terminal hỗ trợ Unicode/ANSI để có trải nghiệm tốt nhất.
 
----
-
-### Option 1: Tải binary sẵn (Windows)
-
-1. Vào [Releases](https://github.com/dinhtuandev/GoNime/releases)
-2. Tải `gonime_windows_amd64.exe`
-3. Đặt vào thư mục trong `PATH` (ví dụ `C:\Tools\`)
-4. Chạy `gonime`
-
-### Option 2: Build từ source
+### Build từ source
 
 ```bash
 # Clone repo
@@ -90,17 +58,28 @@ cd GoNime
 go build -ldflags="-s -w" -o gonime.exe ./cmd/gonime
 
 # Chạy
-.\gonime.exe
+./gonime.exe
 ```
 
 ---
 
 ## 🎮 Sử dụng
 
-### Mở TUI chính
+### Menu chính
 
-```bash
-gonime
+```
+╔══════════════════════════════════════════════════════╗
+║  🎌 GoNime                                        ║
+║                                                 ║
+║  ▶ 🎬 Xem Phim/Anime                            ║
+║    📚 Đọc Manga                                  ║
+║    📜 Lịch sử                                    ║
+║    ⭐ Yêu thích                                   ║
+║    ⚙️ Cài đặt                                     ║
+║    🚪 Thoát                                      ║
+║                                                 ║
+║  ↑/↓: Điều hướng  Enter: Chọn  q: Thoát       ║
+╚══════════════════════════════════════════════════════╝
 ```
 
 ### CLI Commands
@@ -109,17 +88,17 @@ gonime
 # Xem version
 gonime version
 
-# Tìm anime (mở TUI với search sẵn)
+# Xem phim/anime (mở TUI)
 gonime anime "one piece"
+
+# Đọc manga (mở TUI)
+gonime manga "naruto"
 
 # Xem lịch sử
 gonime history list
 
-# Phát lại mục gần nhất trong lịch sử
+# Phát lại mục gần nhất
 gonime history play
-
-# Phát lại mục thứ 3 trong lịch sử
-gonime history play 3
 
 # Xóa toàn bộ lịch sử
 gonime history clear
@@ -132,80 +111,87 @@ gonime settings
 
 ## ⌨️ Phím tắt
 
-### Menu chính
+### Xem Phim/Anime
 
-| Phím                     | Tác dụng   |
-| ------------------------ | ---------- |
-| `↑` / `↓` hoặc `k` / `j` | Điều hướng |
-| `Enter`                  | Chọn       |
-| `q` hoặc `Ctrl+C`        | Thoát      |
-
-### Xem Anime
-
-| Phím     | Tác dụng                         |
-| -------- | -------------------------------- |
-| Gõ ký tự | Nhập tên anime                   |
-| `Enter`  | Tìm kiếm / Chọn anime / Phát tập |
-| `n`      | Tập tiếp theo                    |
-| `p`      | Tập trước                        |
-| `f`      | Thêm vào yêu thích               |
-| `Esc`    | Quay lại                         |
+| Phím | Tác dụng |
+| ---- | -------- |
+| `m` | Đổi nguồn (PhimAPI → OPhim → NguonC) |
+| `s` | Chuyển sang màn hình tìm kiếm |
+| Gõ ký tự | Nhập tên phim |
+| `Enter` | Tìm kiếm / Chọn phim / Phát tập |
+| `n` | Tập tiếp theo |
+| `p` | Tập trước |
+| `f` | Thêm vào yêu thích |
+| `Esc` | Quay lại |
 
 ### Đọc Manga
 
-| Phím                  | Tác dụng                         |
-| --------------------- | -------------------------------- |
-| `↑` / `↓` / `←` / `→` | Chuyển trang                     |
-| `Enter`               | Trang tiếp theo                  |
-| `n`                   | Chapter tiếp theo                |
-| `p`                   | Chapter trước                    |
-| `r`                   | Reload/re-render ảnh             |
-| `o`                   | Mở ảnh bằng Windows Photo Viewer |
-| `w`                   | Mở chapter trong trình duyệt     |
-| `f`                   | Thêm vào yêu thích               |
-| `Esc`                 | Quay lại                         |
+| Phím | Tác dụng |
+| ---- | -------- |
+| `m` | Đổi nguồn (TruyenVN → TruyenQQ) |
+| `s` | Chuyển sang màn hình tìm kiếm |
+| Gõ ký tự | Nhập tên manga |
+| `Enter` | Tìm kiếm / Chọn manga / Đọc chapter |
+| `n` | Chapter tiếp theo |
+| `p` | Chapter trước |
+| `v` | Mở trong Wails viewer (nếu có) |
+| `r` | Reload/re-render ảnh |
+| `f` | Thêm vào yêu thích |
+| `Esc` | Quay lại |
 
-### Lịch sử & Yêu thích
+---
 
-| Phím    | Tác dụng          |
-| ------- | ----------------- |
-| `Enter` | Mở lại / phát lại |
-| `d`     | Xóa mục đang chọn |
-| `c`     | Xóa tất cả        |
-| `Esc`   | Quay lại          |
+## 🎨 Giao diện
 
-### Cài đặt
+### Modern Dark Theme
 
-| Phím    | Tác dụng                 |
-| ------- | ------------------------ |
-| `Enter` | Bắt đầu chỉnh sửa trường |
-| `r`     | Đặt lại về mặc định      |
-| `Esc`   | Hủy / Quay lại           |
+```
+╔═══════════════════════════════════════════════════════════════╗
+║  🎬 ANIME/MOVIE              [phimapi]        [🔥 Xu hướng] ║
+╠═══════════════════════════════════════════════════════════════╣
+║  ▶ Naruto Shippuden                      (2007)             ║
+║    One Piece                                            (1999)║
+║    Dragon Ball Super                                     (2015)║
+║    Attack on Titan                                       (2013)║
+║    My Hero Academia                                      (2016)║
+║                                                           ║
+║  m: Đổi nguồn │ s: Tìm kiếm │ Enter: Xem │ ↑↓: Di chuyển ║
+╚═══════════════════════════════════════════════════════════════╝
+```
 
 ---
 
 ## ⚙️ Cấu hình
 
-File cấu hình được lưu tại:
-
-- **Windows**: `%APPDATA%\gonime\config.json`
-- **Linux/macOS**: `~/.config/gonime/config.json`
+File cấu hình: `%APPDATA%\gonime\config.json` (Windows) hoặc `~/.config/gonime/config.json` (Linux/macOS)
 
 ```json
 {
   "player": "mpv",
-  "download_dir": "C:\\Users\\<user>\\Downloads\\gonime",
-  "manga_image_dir": "C:\\Users\\<user>\\Downloads\\gonime\\manga",
+  "download_dir": "~/Downloads/gonime",
+  "manga_image_dir": "~/Downloads/gonime/manga",
   "manga_image_size": 100
 }
 ```
 
-| Trường             | Mô tả                               | Mặc định                   |
-| ------------------ | ----------------------------------- | -------------------------- |
-| `player`           | Trình phát video (`mpv` hoặc `vlc`) | `mpv`                      |
-| `download_dir`     | Thư mục tải video                   | `~/Downloads/gonime`       |
-| `manga_image_dir`  | Thư mục cache ảnh manga             | `~/Downloads/gonime/manga` |
-| `manga_image_size` | Kích thước ảnh chafa (%)            | `100`                      |
+---
+
+## 🔗 Nguồn dữ liệu
+
+### Phim/Anime
+
+| Nguồn | Loại | API/URL |
+| ------ | ---- | -------- |
+| [phimapi.com](https://phimapi.com) | Anime/Phim | API chính |
+| [ophim.cc](https://ophim.cc) | Phim | API dự phòng |
+| [phim.nguonc.com](https://phim.nguonc.com) | Phim | Scraper |
+
+### Manga
+
+| Nguồn | Loại | URL |
+| ------ | ---- | --- |
+| [truyenvn.shop](https://truyenvn.shop) | Manga | Web scraping |
+| [truyenqqno.com](https://truyenqqno.com) | Manga | Web scraping |
 
 ---
 
@@ -215,28 +201,34 @@ File cấu hình được lưu tại:
 gonime/
 ├── cmd/
 │   └── gonime/
-│       └── main.go          # Entry point, CLI commands
+│       └── main.go              # Entry point, CLI commands
 ├── internal/
 │   ├── api/
-│   │   └── client.go        # Anime API (phimapi.com)
+│   │   ├── client.go            # PhimAPI client
+│   │   ├── ophim.go            # OPhim client
+│   │   ├── nguonc.go           # NguonC scraper
+│   │   └── movie.go            # Movie source interface
 │   ├── config/
-│   │   └── config.go        # Config, history, favorites
+│   │   └── config.go           # Config, history, favorites
 │   ├── player/
-│   │   └── player.go        # mpv/vlc launcher, yt-dlp downloader
+│   │   └── player.go           # mpv/vlc launcher
 │   ├── render/
-│   │   └── chafa.go         # Chafa image renderer
+│   │   └── chafa.go            # Chafa image renderer
 │   ├── scraper/
-│   │   └── manga.go         # Manga scraper (truyenvn.shop)
+│   │   ├── manga.go            # TruyenVN scraper
+│   │   ├── truyenqq.go         # TruyenQQ scraper
+│   │   └── sources.go          # Manga source interface
+│   ├── viewer/
+│   │   ├── viewer.go           # Viewer abstraction
+│   │   ├── wails_viewer.go     # Wails viewer
+│   │   └── frontend/           # Wails frontend files
 │   └── tui/
-│       ├── main.go          # Main menu TUI
-│       ├── anime.go         # Anime search & playback TUI
-│       ├── manga.go         # Manga reader TUI (với chafa)
-│       ├── history.go       # History TUI
-│       ├── favorites.go     # Favorites TUI
-│       ├── settings.go      # Settings editor TUI
-│       └── scraper_bridge.go # Interface bridge
-├── anisub/
-│   └── anisub.sh            # Shell script gốc (tham khảo)
+│       ├── main.go             # Main menu TUI
+│       ├── anime.go            # Anime/Movie TUI
+│       ├── manga.go            # Manga reader TUI
+│       ├── history.go          # History TUI
+│       ├── favorites.go         # Favorites TUI
+│       └── settings.go         # Settings TUI
 ├── go.mod
 ├── go.sum
 └── README.md
@@ -244,45 +236,23 @@ gonime/
 
 ---
 
-## 🔧 Nguồn dữ liệu
-
-| Nguồn                                  | Dùng cho            | API/URL                               |
-| -------------------------------------- | ------------------- | ------------------------------------- |
-| [phimapi.com](https://phimapi.com)     | Anime stream (M3U8) | `https://phimapi.com/v1/api/tim-kiem` |
-| [truyenvn.shop](https://truyenvn.shop) | Manga images        | Web scraping với goquery              |
-
----
-
-## 📦 Dependencies
-
-| Package                                                               | Dùng cho      |
-| --------------------------------------------------------------------- | ------------- |
-| [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) | TUI framework |
-| [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss)   | TUI styling   |
-| [spf13/cobra](https://github.com/spf13/cobra)                         | CLI framework |
-| [PuerkitoBio/goquery](https://github.com/PuerkitoBio/goquery)         | HTML scraping |
-
-**External tools:**
-
-- [mpv](https://mpv.io) hoặc [VLC](https://www.videolan.org) — phát video
-- [chafa](https://hpjansson.org/chafa/) — render ảnh manga trong terminal
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — tải video (tùy chọn)
-
----
-
 ## 🗺 Roadmap
 
 - [x] TUI chính với BubbleTea
-- [x] Tìm kiếm & phát anime qua phimapi.com
+- [x] Tìm kiếm & phát anime (PhimAPI)
 - [x] Đọc manga với chafa rendering
+- [x] Multiple movie sources (PhimAPI, OPhim, NguonC)
+- [x] Multiple manga sources (TruyenVN, TruyenQQ)
+- [x] Wails full manga viewer
+- [x] Chapter navigation trong viewer
+- [x] Thumbnail rendering trong CLI
 - [x] Lịch sử xem/đọc
 - [x] Danh sách yêu thích
 - [x] Cài đặt có thể chỉnh sửa
 - [x] CLI subcommands
-- [ ] Tải episode về máy (yt-dlp integration)
+- [ ] Tải episode về máy (yt-dlp)
 - [ ] Subtitles support
-- [ ] Prefetch ảnh manga (tải trước trang tiếp theo)
-- [ ] Multiple anime API sources
+- [ ] Prefetch ảnh manga
 - [ ] Config profile (nhiều người dùng)
 
 ---
@@ -308,6 +278,6 @@ MIT License — xem [LICENSE](LICENSE)
 
 <div align="center">
 
-Made with ❤️ and Go | Lấy cảm hứng từ **anisub**
+Made with ❤️ and Go
 
 </div>

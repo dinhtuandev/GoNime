@@ -4,37 +4,46 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"gonime/internal/api"
 	"gonime/internal/config"
 	"gonime/internal/player"
+	"gonime/internal/ui/theme"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type HistoryModel struct {
-	parent     MainModel
-	items      []config.HistoryItem
-	index      int
-	loading    bool
-	err        error
-	statusMsg  string
-	manager    *config.Manager
+	parent      MainModel
+	items       []config.HistoryItem
+	index       int
+	loading     bool
+	err         error
+	statusMsg   string
+	manager     *config.Manager
 	animeClient *api.AnimeClient
+	posterArt   string // chafa-rendered thumbnail
+	tick        int
 }
 
 func NewHistoryModel(parent MainModel) HistoryModel {
 	mgr, _ := config.NewManager()
 	items, _ := mgr.LoadHistory()
-	return HistoryModel{
+	m := HistoryModel{
 		parent:      parent,
 		items:       items,
 		manager:     mgr,
 		animeClient: api.NewAnimeClient(),
 	}
+	return m
 }
 
 func (m HistoryModel) Init() tea.Cmd {
-	return nil
+	cmds := []tea.Cmd{tickCmd()}
+	if len(m.items) > 0 && m.items[0].ThumbURL != "" {
+		cmds = append(cmds, posterCmd(m.items[0].ThumbURL))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -50,6 +59,18 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case posterRenderMsg:
+		if msg.err == nil {
+			m.posterArt = msg.rendered
+		}
+		return m, nil
+
+	case tickMsg:
+		if m.loading {
+			m.tick++
+		}
+		return m, tickCmd()
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -59,10 +80,18 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.index > 0 {
 				m.index--
+				m.posterArt = ""
+				if m.index < len(m.items) && m.items[m.index].ThumbURL != "" {
+					return m, posterCmd(m.items[m.index].ThumbURL)
+				}
 			}
 		case "down", "j":
 			if m.index < len(m.items)-1 {
 				m.index++
+				m.posterArt = ""
+				if m.index < len(m.items) && m.items[m.index].ThumbURL != "" {
+					return m, posterCmd(m.items[m.index].ThumbURL)
+				}
 			}
 		case "enter":
 			if len(m.items) > 0 && m.index < len(m.items) {
@@ -129,79 +158,108 @@ func (m HistoryModel) playHistoryItem(item config.HistoryItem) tea.Cmd {
 func (m HistoryModel) View() string {
 	var b strings.Builder
 
-	headerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#33a5f5")).
-		Bold(true).
-		Margin(1, 0)
-
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9f75ff")).
-		Bold(true)
-
-	normalStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f0f4ff"))
-
-	hintStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#a0a8c8"))
-
-	errStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ff6b6b"))
-
-	successStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4caf50"))
-
-	b.WriteString(headerStyle.Render("📜 LỊCH SỬ XEM"))
-	b.WriteString("\n\n")
+	b.WriteString(drawHeader("📜", "LỊCH SỬ XEM", nil, theme.Primary))
+	b.WriteString(drawHeaderLine(theme.Primary))
+	b.WriteString("\n")
 
 	if m.loading {
-		b.WriteString(hintStyle.Render("⏳ Đang khởi động trình phát..."))
+		b.WriteString(drawLoadingLine("Đang khởi động trình phát...", m.tick))
 	} else if m.err != nil {
-		b.WriteString(errStyle.Render(fmt.Sprintf("❌ Lỗi: %v", m.err)))
+		b.WriteString(drawErrorLine(fmt.Sprintf("Lỗi: %v", m.err)))
 		b.WriteString("\n")
 	}
 
 	if len(m.items) == 0 {
-		emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#a0a8c8"))
-		b.WriteString(emptyStyle.Render("Chưa có lịch sử xem."))
+		b.WriteString("  ")
+		b.WriteString(theme.Muted.Render("Chưa có lịch sử xem."))
+		b.WriteString("\n  ")
+		b.WriteString(theme.Muted.Render("Xem anime/manga rồi quay lại đây nhé!"))
 	} else {
-		typeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#33a5f5"))
-		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#a0a8c8"))
+		selStyle := lipgloss.NewStyle().
+			Foreground(theme.Primary).
+			Background(theme.BackgroundLight).
+			Bold(true).
+			Padding(0, 1)
+		normStyle := lipgloss.NewStyle().
+			Foreground(theme.TextSecondary).
+			Padding(0, 1)
+		timeStyle := lipgloss.NewStyle().Foreground(theme.TextMuted)
+		animeTypeStyle := lipgloss.NewStyle().Foreground(theme.AnimeAccent)
+		mangaTypeStyle := lipgloss.NewStyle().Foreground(theme.MangaAccent)
 
+		// Build LEFT list
+		var leftB strings.Builder
+		leftB.WriteString("\n")
 		for i, item := range m.items {
-			typeIcon := "🎬"
+			var typeTag string
 			if item.Type == "manga" {
-				typeIcon = "📚"
-			}
-
-			line := fmt.Sprintf("%s %s - %s", typeIcon, item.Name, item.Episode)
-
-			if i == m.index {
-				b.WriteString(selectedStyle.Render("▶ " + line))
-				if item.Timestamp != "" {
-					b.WriteString("  ")
-					b.WriteString(timeStyle.Render(item.Timestamp))
-				}
+				typeTag = mangaTypeStyle.Render("📚")
 			} else {
-				b.WriteString(normalStyle.Render("  " + line))
-				if item.Timestamp != "" {
-					b.WriteString("  ")
-					b.WriteString(timeStyle.Render(item.Timestamp))
-				}
+				typeTag = animeTypeStyle.Render("🎦")
 			}
-			b.WriteString("\n")
+			epStr := ""
+			if item.Episode != "" {
+				epStr = "  " + theme.Muted.Render("·  "+item.Episode)
+			}
+			timestamp := ""
+			if item.Timestamp != "" {
+				timestamp = "  " + timeStyle.Render(item.Timestamp)
+			}
+			if i == m.index {
+				leftB.WriteString("  " + typeTag + "  " + selStyle.Render("▶  "+item.Name) + epStr + timestamp + "\n")
+			} else {
+				leftB.WriteString("  " + typeTag + "  " + normStyle.Render("   "+item.Name) + epStr + timestamp + "\n")
+			}
+		}
+		leftB.WriteString("\n  ")
+		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(m.items))))
+		leftB.WriteString(theme.Muted.Render(" mục trong lịch sử"))
+
+		// Build RIGHT poster panel
+		var rightStr string
+		if m.posterArt != "" && m.index < len(m.items) {
+			item := m.items[m.index]
+			accentColor := theme.AnimeAccent
+			if item.Type == "manga" {
+				accentColor = theme.MangaAccent
+			}
+			accentStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+			var info strings.Builder
+			info.WriteString("\n" + accentStyle.Render(item.Name) + "\n")
+			if item.Episode != "" {
+				info.WriteString(theme.Muted.Render(item.Episode) + "\n")
+			}
+			if item.Timestamp != "" {
+				info.WriteString(theme.Muted.Render("📅 "+item.Timestamp) + "\n")
+			}
+			posterStyle := lipgloss.NewStyle().Padding(0, 1)
+			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(40)
+			rightStr = lipgloss.JoinHorizontal(lipgloss.Top,
+				posterStyle.Render(m.posterArt),
+				infoStyle.Render(info.String()),
+			)
 		}
 
-		b.WriteString("\n")
-		b.WriteString(typeStyle.Render(fmt.Sprintf("Tổng: %d mục", len(m.items))))
+		leftStyle := lipgloss.NewStyle().Width(52)
+		if rightStr != "" {
+			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), rightStr))
+		} else {
+			b.WriteString(leftB.String())
+		}
 	}
 
 	if m.statusMsg != "" {
-		b.WriteString("\n")
-		b.WriteString(successStyle.Render(m.statusMsg))
+		b.WriteString(drawSuccessLine(m.statusMsg))
 	}
 
-	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("Esc: Quay lại | ↑/↓: Điều hướng | Enter: Mở lại | d: Xóa mục | c: Xóa tất cả"))
+	b.WriteString(drawStatusBar([]string{
+		"Esc: Quay lại",
+		"↑↓: Di chuyển",
+		"Enter: Mở lại",
+		"d: Xóa mục",
+		"c: Xóa tất cả",
+	}))
+	b.WriteString("\n")
 
 	return b.String()
 }

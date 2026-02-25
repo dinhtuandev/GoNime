@@ -136,6 +136,23 @@ func (r *ChafaRenderer) RenderFile(path string) (string, error) {
 	return string(out), nil
 }
 
+// RenderThumbnail render a thumbnail version of an image URL using chafa.
+// It downloads the image (with cache) if needed, then renders with smaller dims.
+func (r *ChafaRenderer) RenderThumbnail(ctx context.Context, imageURL string, width int, height int) (string, error) {
+	// Ensure image is cached locally
+	localPath, err := r.downloadWithCache(ctx, imageURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Temporarily override size for thumbnail rendering
+	oldW, oldH := r.Width, r.Height
+	r.Width, r.Height = width, height
+	defer func() { r.Width, r.Height = oldW, oldH }()
+
+	return r.RenderFile(localPath)
+}
+
 // downloadWithCache tải ảnh về cache dir, trả về đường dẫn local
 func (r *ChafaRenderer) downloadWithCache(ctx context.Context, imageURL string) (string, error) {
 	// Tạo tên file từ URL

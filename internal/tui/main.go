@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"gonime/internal/ui/theme"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -25,35 +27,15 @@ const (
 	ScreenSettings
 )
 
-var (
-	titleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#33a5f5")).
-			Bold(true).
-			Padding(1, 2).
-			Render
-
-	menuStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#f0f4ff")).
-			Padding(0, 4).
-			Render
-
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#9f75ff")).
-			Bold(true).
-			Padding(0, 4).
-			Render
-
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#33a5f5")).
-			Padding(1, 2).
-			Margin(1, 2)
-)
+// ─── Menu item ────────────────────────────────────────────────────────────────
 
 type MenuItem struct {
+	Icon  string
 	Title string
 	Desc  string
 }
+
+// ─── Model ────────────────────────────────────────────────────────────────────
 
 type MainModel struct {
 	screen    Screen
@@ -61,18 +43,19 @@ type MainModel struct {
 	menuItems []MenuItem
 	width     int
 	height    int
+	tick      int
 }
 
 func NewMainModel() MainModel {
 	return MainModel{
 		screen: ScreenMain,
 		menuItems: []MenuItem{
-			{"Xem Anime", "Tìm kiếm và xem anime vietsub"},
-			{"Đọc Manga", "Đọc manga từ truyenvn.shop"},
-			{"Lịch sử", "Xem lại các anime/manga đã xem"},
-			{"Yêu thích", "Danh sách anime/manga yêu thích"},
-			{"Cài đặt", "Thay đổi cấu hình ứng dụng"},
-			{"Thoát", "Thoát khỏi ứng dụng"},
+			{"📺", "Xem Anime", "Khám phá & xem anime vietsub"},
+			{"📚", "Đọc Manga", "Đọc manga từ nhiều nguồn"},
+			{"📜", "Lịch sử", "Xem lại các anime/manga đã xem"},
+			{"⭐", "Yêu thích", "Danh sách anime/manga yêu thích"},
+			{"⚙️ ", "Cài đặt", "Cấu hình ứng dụng"},
+			{"🚪", "Thoát", "Thoát khỏi ứng dụng"},
 		},
 	}
 }
@@ -139,33 +122,127 @@ func (m MainModel) handleMenuSelection() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// ─── View ─────────────────────────────────────────────────────────────────────
+
 func (m MainModel) View() string {
 	var b strings.Builder
 
-	title := `
- ██████╗   ██████╗  ███╗   ██╗ ██╗ ███╗   ███╗ ███████╗
-██╔════╝  ██╔═══██╗ ████╗  ██║ ██║ ████╗ ████║ ██╔════╝
-██║  ███╗ ██║   ██║ ██╔██╗ ██║ ██║ ██╔████╔██║ █████╗
-██║   ██║ ██║   ██║ ██║╚██╗██║ ██║ ██║╚██╔╝██║ ██╔══╝
-╚██████╔╝ ╚██████╔╝ ██║ ╚████║ ██║ ██║ ╚═╝ ██║ ███████╗
- ╚═════╝   ╚═════╝  ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝ ╚══════╝`
+	// ── Logo ──────────────────────────────────────────────────────────────────
+	logo := buildLogo()
+	b.WriteString(logo)
+	b.WriteString("\n")
 
-	b.WriteString(titleStyle(title))
-	b.WriteString("\n\n")
-	b.WriteString(menuStyle("🎬 Anime & Manga CLI Player"))
+	// ── Subtitle ──────────────────────────────────────────────────────────────
+	subtitleStyle := lipgloss.NewStyle().
+		Foreground(theme.TextSecondary).
+		Padding(0, 4)
+	b.WriteString(subtitleStyle.Render("🎌  Anime & Manga CLI Player  ·  Vietnamese Subtitles  🎌"))
+	b.WriteString("\n")
+
+	// ── Divider ───────────────────────────────────────────────────────────────
+	b.WriteString("\n  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(theme.TextDim).Render(strings.Repeat("─", 56)))
 	b.WriteString("\n\n")
 
+	// ── Menu Items ────────────────────────────────────────────────────────────
 	for i, item := range m.menuItems {
 		if i == m.menuIndex {
-			b.WriteString(selectedStyle(fmt.Sprintf("▶ %s - %s", item.Title, item.Desc)))
+			b.WriteString(renderSelectedMenuItem(i+1, item))
 		} else {
-			b.WriteString(menuStyle(fmt.Sprintf("  %s - %s", item.Title, item.Desc)))
+			b.WriteString(renderNormalMenuItem(i+1, item))
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n")
-	b.WriteString(menuStyle("↑/↓: Điều hướng | Enter: Chọn | q: Thoát"))
+	// ── Bottom divider ────────────────────────────────────────────────────────
+	b.WriteString("\n  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(theme.TextDim).Render(strings.Repeat("─", 56)))
 
+	// ── Status bar ────────────────────────────────────────────────────────────
+	b.WriteString(drawStatusBar([]string{
+		"↑↓/jk: Di chuyển",
+		"Enter: Chọn",
+		"q: Thoát",
+	}))
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+// renderSelectedMenuItem renders the currently highlighted menu item.
+func renderSelectedMenuItem(num int, item MenuItem) string {
+	// Number badge
+	numStyle := lipgloss.NewStyle().
+		Foreground(theme.BackgroundDark).
+		Background(theme.Primary).
+		Bold(true).
+		Padding(0, 1)
+
+	// Selected row box
+	rowStyle := lipgloss.NewStyle().
+		Foreground(theme.Primary).
+		Background(theme.BackgroundLight).
+		Bold(true).
+		Padding(0, 1)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(theme.TextSecondary).
+		Background(theme.BackgroundLight)
+
+	numBadge := numStyle.Render(fmt.Sprintf("%d", num))
+	row := rowStyle.Render(fmt.Sprintf("  ▶  %s  %s", item.Icon, item.Title))
+	desc := descStyle.Render("  " + item.Desc)
+
+	return "  " + numBadge + row + desc
+}
+
+// renderNormalMenuItem renders an unselected menu item.
+func renderNormalMenuItem(num int, item MenuItem) string {
+	numStyle := lipgloss.NewStyle().
+		Foreground(theme.TextMuted).
+		Padding(0, 1)
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(theme.TextSecondary).
+		Padding(0, 1)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(theme.TextMuted)
+
+	numBadge := numStyle.Render(fmt.Sprintf("%d", num))
+	title := titleStyle.Render(fmt.Sprintf("     %s  %s", item.Icon, item.Title))
+	desc := descStyle.Render("  " + item.Desc)
+
+	return "  " + numBadge + title + desc
+}
+
+// buildLogo constructs the multi-line GONIME ASCII logo with alternating colors.
+func buildLogo() string {
+	lines := []string{
+		` ██████╗  ██████╗  ███╗  ██╗ ██╗ ███╗ ███╗ ███████╗`,
+		`██╔════╝ ██╔═══██╗ ████╗ ██║ ██║ ████████║ ██╔════╝`,
+		`██║  ██╗ ██║   ██║ ██╔██╗██║ ██║ ██╔██╔██║ █████╗  `,
+		`██║  ╚██╗██║   ██║ ██║╚████║ ██║ ██║╚═╝██║ ██╔══╝  `,
+		`╚██████╔╝╚██████╔╝ ██║ ╚███║ ██║ ██║   ██║ ███████╗`,
+		` ╚═════╝  ╚═════╝  ╚═╝  ╚══╝ ╚═╝ ╚═╝   ╚═╝ ╚══════╝`,
+	}
+
+	colors := []lipgloss.Color{
+		theme.Primary,
+		theme.Primary,
+		lipgloss.Color("#40e0ff"),
+		lipgloss.Color("#80eeff"),
+		theme.Secondary,
+		theme.Secondary,
+	}
+
+	var b strings.Builder
+	b.WriteString("\n")
+	for i, line := range lines {
+		c := colors[i%len(colors)]
+		s := lipgloss.NewStyle().Foreground(c).Bold(true).Padding(0, 2)
+		b.WriteString(s.Render(line))
+		b.WriteString("\n")
+	}
 	return b.String()
 }

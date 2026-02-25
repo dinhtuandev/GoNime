@@ -51,6 +51,10 @@ func NewMangaScraper(baseURL string) *MangaScraper {
 	}
 }
 
+func (s *MangaScraper) Name() string {
+	return "TruyenVN"
+}
+
 func (s *MangaScraper) doRequest(reqURL string) (*goquery.Document, error) {
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
@@ -246,19 +250,22 @@ func (s *MangaScraper) GetTrending() ([]Manga, error) {
 	seen := make(map[string]bool)
 
 	// Selector chuẩn của Madara theme cho trang chủ/listing
+	// Updated selectors for truyenvn.shop structure
 	selectors := []string{
 		".page-item-detail .post-title a",
+		".post-title a",
 		".slider__thumb_item a",
 		".c-tabs-item__content .post-title a",
 		".manga-title-badges a",
-		".post-title a",
 		"h3 a",
+		".manga-item .manga-title a",
+		".popular-manga-list .manga-item a",
 	}
 
 	for _, sel := range selectors {
 		doc.Find(sel).Each(func(i int, s *goquery.Selection) {
 			link, _ := s.Attr("href")
-			if !strings.Contains(link, "/truyen-tranh/") {
+			if link == "" || !strings.Contains(link, "/truyen-tranh/") {
 				return
 			}
 
@@ -283,23 +290,26 @@ func (s *MangaScraper) GetTrending() ([]Manga, error) {
 				Slug: slug,
 			})
 		})
-		if len(mangas) >= 15 {
+		if len(mangas) >= 20 {
 			break
 		}
 	}
 
-	// Cuối cùng nếu vẫn ít, quét mọi link /truyen-tranh/
+	// If still no results, try to parse from the main content structure we saw in the HTML
 	if len(mangas) < 5 {
-		doc.Find("a").Each(func(i int, s *goquery.Selection) {
-			link, _ := s.Attr("href")
-			if !strings.Contains(link, "/truyen-tranh/") {
+		doc.Find(".page-item-detail, .manga-item, .post-item").Each(func(i int, sel *goquery.Selection) {
+			link := sel.Find("a").First()
+			href, _ := link.Attr("href")
+			if href == "" || !strings.Contains(href, "/truyen-tranh/") {
 				return
 			}
-			title := strings.TrimSpace(s.AttrOr("title", ""))
+
+			title := strings.TrimSpace(link.AttrOr("title", ""))
 			if title == "" {
-				title = strings.TrimSpace(s.Text())
+				title = strings.TrimSpace(link.Text())
 			}
-			slug := extractSlug(link)
+
+			slug := extractSlug(href)
 			if slug != "" && title != "" && !seen[slug] && len(slug) > 3 {
 				seen[slug] = true
 				mangas = append(mangas, Manga{

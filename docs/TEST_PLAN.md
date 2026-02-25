@@ -39,37 +39,37 @@ Vì đây là ứng dụng giao diện terminal (TUI), việc kiểm thử bằn
 
 ### Case 1: Khởi động & Trending
 
-- [ ] Chạy `.\gonime.exe`.
-- [ ] Chọn **Xem Anime** → Phải hiển thị danh sách "Xu hướng" (Trending).
-- [ ] Nhấn `Esc` quay lại menu chính.
+- [x] Chạy `.\gonime.exe`.
+- [] Chọn **Xem Anime** → Phải hiển thị danh sách "Xu hướng" (Trending).
+- [x] Nhấn `Esc` quay lại menu chính.
 - [ ] Chọn **Đọc Manga** → Phải hiển thị danh sách truyện mới nhất từ web.
 
 ### Case 2: Tìm kiếm & Giao diện (UI)
 
-- [ ] Tại màn hình Anime/Manga, nhấn phím `s`.
-- [ ] Kiểm tra **Khung nhập liệu**: Viền phải khít, label "Nhập tên..." nằm trên khung, có con trỏ `▌`.
-- [ ] Nhập "Naruto" và nhấn `Enter`.
-- [ ] Kết quả tìm kiếm phải hiển thị danh sách phim/truyện đúng từ khóa.
-- [ ] Nhấn `Ctrl+U` để xóa nhanh dòng tìm kiếm.
+- [x] Tại màn hình Anime/Manga, nhấn phím `s`.
+- [x] Kiểm tra **Khung nhập liệu**: Viền phải khít, label "Nhập tên..." nằm trên khung, có con trỏ `▌`.
+- [x] Nhập "Naruto" và nhấn `Enter`.
+- [x] Kết quả tìm kiếm phải hiển thị danh sách phim/truyện đúng từ khóa.
+- [x] Nhấn `Ctrl+U` để xóa nhanh dòng tìm kiếm.
 
 ### Case 3: Phát Video (Anime)
 
-- [ ] Chọn một bộ phim → Chọn một tập phim bất kỳ.
-- [ ] Nhấn `Enter` để phát.
-- [ ] **Kết quả**:
-  - Nếu máy có mpv/vlc: Trình phát phải tự bật lên.
-  - Nếu máy không có: Trình duyệt web mặc định phải mở Link M3U8/Embed.
-- [ ] Thử phím `n` (Next) và `p` (Previous) để chuyển tập.
-- [ ] Thử phím `s` để đổi Server (nếu phim có nhiều server).
+- [x] Chọn một bộ phim → Chọn một tập phim bất kỳ.
+- [x] Nhấn `Enter` để phát.
+- [x] **Kết quả**:
+  - [x] Nếu máy có mpv/vlc: Trình phát phải tự bật lên.
+  - [x] Nếu máy không có: Trình duyệt web mặc định phải mở Link M3U8/Embed.
+- [x] Thử phím `n` (Next) và `p` (Previous) để chuyển tập.
+- [x] Thử phím `s` để đổi Server (nếu phim có nhiều server).
 
 ### Case 4: Đọc Truyện (Manga)
 
-- [ ] Chọn một bộ truyện → Chọn một Chapter.
-- [ ] Nhấn `Enter`.
+- [x] Chọn một bộ truyện → Chọn một Chapter.
+- [x] Nhấn `Enter`.
 - [ ] **Kết quả**:
-  - Nếu có `chafa`: Ảnh phải hiển thị dưới dạng ASCII/Sixel trong terminal.
-  - Nhấn `o` (Open): Ảnh phải được tải về và mở bằng trình xem ảnh của Windows.
-  - Nhấn `w` (Web): Mở link chapter đó trên trình duyệt.
+  - [ ] Nếu có `chafa`: Ảnh phải hiển thị dưới dạng ASCII/Sixel trong terminal. (có lẽ không đúng ý tưởng, thay vì vậy chỉ cần load ảnh lên terminal)
+  - [x] Nhấn `o` (Open): Ảnh phải được tải về và mở bằng trình xem ảnh của Windows.
+  - [x] Nhấn `w` (Web): Mở link chapter đó trên trình duyệt.
 
 ### Case 5: Cài đặt (Settings)
 

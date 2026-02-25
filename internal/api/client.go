@@ -169,21 +169,34 @@ func (c *AnimeClient) GetAllServers(slug string) (*MovieInfo, []EpisodeServer, e
 	return &result.Movie, result.Episodes, nil
 }
 
+func (c *AnimeClient) Name() string {
+	return "PhimAPI"
+}
+
+func (c *AnimeClient) GetDetails(slug string) (*MovieInfo, []EpisodeData, error) {
+	movie, servers, err := c.GetAllServers(slug)
+	if err != nil {
+		return nil, nil, err
+	}
+	var allEpisodes []EpisodeData
+	for _, srv := range servers {
+		allEpisodes = append(allEpisodes, srv.ServerData...)
+	}
+	return movie, allEpisodes, nil
+}
+
 // --- Trending Structs ---
 
 type TrendingResponse struct {
-	Status string       `json:"status"`
-	Data   TrendingData `json:"data"`
-}
-
-type TrendingData struct {
-	Items          []AnimeItem `json:"items"`
-	CDNImageDomain string      `json:"APP_DOMAIN_CDN_IMAGE"`
+	Status    bool        `json:"status"`
+	Items     []AnimeItem `json:"items"`
+	PathImage string      `json:"pathImage"`
 }
 
 // GetTrending lấy danh sách anime mới nhất/xu hướng
 func (c *AnimeClient) GetTrending(page int) ([]AnimeItem, string, error) {
-	reqURL := fmt.Sprintf("%s/v1/api/danh-sach/phim-bo?page=%d&sort_field=modified.time&limit=20", BaseURL, page)
+	// Sử dụng endpoint phim mới cập nhật (không có v1/api)
+	reqURL := fmt.Sprintf("%s/danh-sach/phim-moi-cap-nhat?page=%d", BaseURL, page)
 
 	resp, err := c.doGet(reqURL)
 	if err != nil {
@@ -200,9 +213,9 @@ func (c *AnimeClient) GetTrending(page int) ([]AnimeItem, string, error) {
 		return nil, "", err
 	}
 
-	if result.Status != "success" {
+	if !result.Status {
 		return nil, "", errors.New("API trending trả về lỗi")
 	}
 
-	return result.Data.Items, result.Data.CDNImageDomain, nil
+	return result.Items, result.PathImage, nil
 }

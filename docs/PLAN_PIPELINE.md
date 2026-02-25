@@ -1,7 +1,7 @@
 # GoNime CLI - Pipeline Description
 
 Mục tiêu
-- Xây dựng một CLI native Go cho Windows (điểm phát hành .exe duy nhất) cho việc xem anime, đọc manga, tải xuống và quản lý history/yêu thích.
+- Xây dựng một CLI native Go cho Windows (điểm phát hành .exe duy nhất) cho việc xem anime/phim, đọc manga, tải xuống và quản lý history/yêu thích.
 - Đảm bảo hiệu năng cao, dễ bảo trì và có thể mở rộng với TUI (Bubble Tea) và scraper/API modular.
 
 ## 1. Kiến trúc hệ thống (High-level)
@@ -106,7 +106,7 @@ Phase 5 — Build, phân phối và runtime
 - Chuẩn bị môi trường:
   - Go 1.21+ hoặc tương thích
   - Trình phát video (mpv/vlc)
-  - yt-dlp (tải) và chafa (đọc manga) nếu có
+  - yt-dlp (tải) và chafa (preview thumbnail) nếu có
 
 - Build từ source:
   go mod download

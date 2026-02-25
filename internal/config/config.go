@@ -18,6 +18,7 @@ type Config struct {
 	DownloadDir    string `json:"download_dir"`
 	MangaImageDir  string `json:"manga_image_dir"`
 	MangaImageSize int    `json:"manga_image_size"`
+	MangaURL       string `json:"manga_url"`
 }
 
 func (c *Config) Validate() error {
@@ -40,14 +41,16 @@ type HistoryItem struct {
 	Name      string `json:"name"`
 	Episode   string `json:"episode"`
 	URL       string `json:"url"`
+	ThumbURL  string `json:"thumb_url,omitempty"`
 	Type      string `json:"type"`
 	Timestamp string `json:"timestamp"`
 }
 
 type FavoriteItem struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-	Type string `json:"type"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	Type     string `json:"type"`
+	ThumbURL string `json:"thumb_url,omitempty"`
 }
 
 type Manager struct {
@@ -141,6 +144,7 @@ func (m *Manager) getDefaultConfig() *Config {
 		DownloadDir:    downloadDir,
 		MangaImageDir:  filepath.Join(downloadDir, "manga"),
 		MangaImageSize: 100,
+		MangaURL:       "https://truyenvn.shop",
 	}
 }
 

@@ -53,3 +53,6 @@ assets/*.jpeg
 assets/*.jpg
 assets/*.png
 assets/*.webp
+
+# node_module
+node_modules/

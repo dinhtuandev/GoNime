@@ -18,6 +18,6 @@ func (a *mangaScraperAdapter) GetDetails(slug string) (*scraper.Manga, error) {
 
 func newScraper() scraper_iface {
 	return &mangaScraperAdapter{
-		s: scraper.GetMangaSource("truyenvn"),
+		s: scraper.GetMangaSource("otruyen"),
 	}
 }

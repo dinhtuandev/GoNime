@@ -219,3 +219,51 @@ func (c *AnimeClient) GetTrending(page int) ([]AnimeItem, string, error) {
 
 	return result.Items, result.PathImage, nil
 }
+
+// GetByTMDB lấy thông tin phim & danh sách tập dựa trên TMDB ID.
+// type = "tv" hoặc "movie" (theo spec của phimapi).
+func (c *AnimeClient) GetByTMDB(contentType, id string) (*MovieInfo, []EpisodeServer, error) {
+	if contentType != "tv" && contentType != "movie" {
+		return nil, nil, fmt.Errorf("contentType không hợp lệ: %s (chỉ hỗ trợ tv|movie)", contentType)
+	}
+	if id == "" {
+		return nil, nil, errors.New("id TMDB không được để trống")
+	}
+
+	reqURL := fmt.Sprintf("%s/tmdb/%s/%s", BaseURL, contentType, id)
+
+	resp, err := c.doGet(reqURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, errors.New("không tìm thấy phim theo TMDB: " + resp.Status)
+	}
+
+	var result EpisodeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, nil, err
+	}
+
+	if !result.Status {
+		return nil, nil, errors.New("API TMDB trả về lỗi")
+	}
+
+	return &result.Movie, result.Episodes, nil
+}
+
+// GetEpisodesByTMDB là helper flatten toàn bộ episodes giống GetDetails,
+// nhưng truy xuất qua TMDB ID thay vì slug KKPhim.
+func (c *AnimeClient) GetEpisodesByTMDB(contentType, id string) (*MovieInfo, []EpisodeData, error) {
+	movie, servers, err := c.GetByTMDB(contentType, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	var allEpisodes []EpisodeData
+	for _, srv := range servers {
+		allEpisodes = append(allEpisodes, srv.ServerData...)
+	}
+	return movie, allEpisodes, nil
+}

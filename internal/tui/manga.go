@@ -1,4 +1,4 @@
-﻿package tui
+package tui
 
 import (
 	"context"
@@ -126,14 +126,15 @@ func NewMangaModel(parent MainModel) MangaModel {
 	return MangaModel{
 		parent:     parent,
 		screen:     mangaScreenTrending,
-		scraper:    scraper.GetMangaSource("truyenvn"),
+		scraper:    scraper.GetMangaSource("otruyen"),
 		cfgManager: mgr,
 		cacheDir:   cacheDir,
 		termWidth:  100,
 		termHeight: 40,
-		source:     "truyenvn",
+		source:     "otruyen",
 		sources:    sources,
 		viewer:     viewer.NewWailsViewerReal(),
+		loading:    true,
 	}
 }
 
@@ -689,8 +690,15 @@ func (m MangaModel) View() string {
 
 		if m.err != nil {
 			b.WriteString(drawErrorLine(m.err.Error()))
-		} else if m.loading || len(m.trendingList) == 0 {
+		} else if m.loading {
 			b.WriteString(drawLoadingLine("Đang tải xu hướng...", m.tick))
+		} else if len(m.trendingList) == 0 {
+			b.WriteString("  ")
+			b.WriteString(theme.Muted.Render("Không có dữ liệu cho nguồn hiện tại. "))
+			b.WriteString(theme.Muted.Render("Nhấn "))
+			b.WriteString(theme.HintKey.Render("m"))
+			b.WriteString(theme.Muted.Render(" để đổi nguồn, hoặc kiểm tra kết nối mạng."))
+			b.WriteString("\n")
 		} else {
 			selStyle := lipgloss.NewStyle().
 				Foreground(theme.Secondary).

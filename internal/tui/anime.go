@@ -1,4 +1,4 @@
-﻿package tui
+package tui
 
 import (
 	"fmt"
@@ -42,6 +42,11 @@ type loadEpisodesMsg struct {
 }
 
 type playAnimeMsg struct {
+	err error
+}
+
+// downloadAnimeMsg báo kết quả tải xuống một tập phim.
+type downloadAnimeMsg struct {
 	err error
 }
 
@@ -104,6 +109,7 @@ func NewAnimeModel(parent MainModel) AnimeModel {
 		cfgManager: mgr,
 		source:     "phimapi",
 		sources:    sources,
+		loading:    true,
 	}
 }
 
@@ -191,6 +197,17 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentEpIdx < len(m.episodeList) {
 				m.statusMsg = fmt.Sprintf("▶ Đang phát tập %s", m.episodeList[m.currentEpIdx].Name)
 			}
+		}
+		return m, nil
+
+	case downloadAnimeMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.statusMsg = ""
+		} else if m.currentEpIdx < len(m.episodeList) {
+			m.err = nil
+			m.statusMsg = fmt.Sprintf("⬇ Đã gửi tải xuống: %s", episodeLabel(m.episodeList[m.currentEpIdx].Name))
 		}
 		return m, nil
 
@@ -388,6 +405,13 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.playEpisode(m.currentEpIdx)
 			}
 			m.statusMsg = "⚠ Đây là tập đầu!"
+		case "d":
+			// Tải tập hiện tại bằng yt-dlp
+			if len(m.episodeList) > 0 && m.currentEpIdx < len(m.episodeList) {
+				m.loading = true
+				m.err = nil
+				return m, m.downloadEpisode(m.currentEpIdx)
+			}
 		case "s":
 			if len(m.servers) > 1 {
 				m.serverIdx = (m.serverIdx + 1) % len(m.servers)
@@ -520,11 +544,56 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 
 		title := "GoNime"
 		if m.selectedAnime != nil {
-			title = fmt.Sprintf("GoNime: %s - Tập %s", m.selectedAnime.Name, ep.Name)
+			title = fmt.Sprintf("GoNime: %s - %s", m.selectedAnime.Name, episodeLabel(ep.Name))
 		}
 
 		err = p.Play(link, title)
 		return playAnimeMsg{err: err}
+	}
+}
+
+// downloadEpisode tải tập hiện tại bằng yt-dlp vào DownloadDir trong config.
+func (m AnimeModel) downloadEpisode(epIdx int) tea.Cmd {
+	return func() tea.Msg {
+		if epIdx < 0 || epIdx >= len(m.episodeList) {
+			return downloadAnimeMsg{err: fmt.Errorf("tập phim không hợp lệ")}
+		}
+
+		ep := m.episodeList[epIdx]
+		link := ep.LinkM3U8
+		if link == "" {
+			link = ep.LinkEmbed
+		}
+		if link == "" {
+			return downloadAnimeMsg{err: fmt.Errorf("không tìm thấy link để tải tập này")}
+		}
+
+		if m.cfgManager == nil {
+			return downloadAnimeMsg{err: fmt.Errorf("không tìm thấy cấu hình tải xuống")}
+		}
+
+		cfg, err := m.cfgManager.LoadConfig()
+		if err != nil {
+			return downloadAnimeMsg{err: fmt.Errorf("không tải được config: %v", err)}
+		}
+
+		downloader, err := player.NewDownloader()
+		if err != nil {
+			return downloadAnimeMsg{err: fmt.Errorf("yt-dlp chưa được cài đặt hoặc không tìm thấy trong PATH: %v", err)}
+		}
+
+		outputDir := cfg.DownloadDir
+		if outputDir == "" {
+			return downloadAnimeMsg{err: fmt.Errorf("DownloadDir không được cấu hình")}
+		}
+
+		// Gọi Download, để yt-dlp tự đặt tên file theo tiêu đề.
+		go func() {
+			_ = os.MkdirAll(outputDir, 0o755)
+			_ = downloader.Download(link, outputDir, nil)
+		}()
+
+		return downloadAnimeMsg{err: nil}
 	}
 }
 
@@ -593,8 +662,15 @@ func (m AnimeModel) View() string {
 
 		if m.err != nil {
 			b.WriteString(drawErrorLine(m.err.Error()))
-		} else if m.loading || len(m.trendingList) == 0 {
+		} else if m.loading {
 			b.WriteString(drawLoadingLine("Đang tải xu hướng...", m.tick))
+		} else if len(m.trendingList) == 0 {
+			b.WriteString("  ")
+			b.WriteString(theme.Muted.Render("Không có dữ liệu cho nguồn hiện tại. "))
+			b.WriteString(theme.Muted.Render("Nhấn "))
+			b.WriteString(theme.HintKey.Render("m"))
+			b.WriteString(theme.Muted.Render(" để đổi nguồn, hoặc kiểm tra kết nối mạng."))
+			b.WriteString("\n")
 		} else {
 			selStyle := lipgloss.NewStyle().
 				Foreground(theme.Primary).
@@ -848,10 +924,10 @@ func (m AnimeModel) View() string {
 
 			b.WriteString("\n")
 			b.WriteString(theme.Muted.Render(fmt.Sprintf(
-				"  Tổng: %d tập  ·  Đang xem: Tập %s",
+				"  Tổng: %d tập  ·  Đang xem: %s",
 				total, func() string {
 					if m.currentEpIdx < len(m.episodeList) {
-						return m.episodeList[m.currentEpIdx].Name
+						return episodeLabel(m.episodeList[m.currentEpIdx].Name)
 					}
 					return "-"
 				}())))
@@ -886,7 +962,7 @@ func (m AnimeModel) View() string {
 func (m *AnimeModel) renderEpisodeList(b *strings.Builder, start, end int, sel, norm, ok lipgloss.Style) {
 	for i := start; i < end; i++ {
 		ep := m.episodeList[i]
-		line := fmt.Sprintf("Tập %s", ep.Name)
+		line := episodeLabel(ep.Name)
 
 		if i == m.currentEpIdx {
 			line += "  ▶"
@@ -907,7 +983,7 @@ func (m *AnimeModel) renderEpisodeGrid(b *strings.Builder, start, end int, sel, 
 
 	for i := start; i < end; i++ {
 		ep := m.episodeList[i]
-		label := fmt.Sprintf("Tập %-4s", ep.Name)
+		label := episodeLabel(ep.Name)
 		if len(label) > colWidth-2 {
 			label = label[:colWidth-2]
 		}
@@ -927,6 +1003,23 @@ func (m *AnimeModel) renderEpisodeGrid(b *strings.Builder, start, end int, sel, 
 		}
 	}
 	b.WriteString("\n")
+}
+
+// episodeLabel chuẩn hóa nhãn tập, tránh lặp "Tập Tập ..."
+// Nếu tên tập đã bắt đầu bằng "Tập ", "Tap " hoặc "Episode " (không phân biệt hoa/thường),
+// trả về nguyên văn, ngược lại thêm prefix "Tập ".
+func episodeLabel(name string) string {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return ""
+	}
+	lower := strings.ToLower(n)
+	if strings.HasPrefix(lower, "tập ") ||
+		strings.HasPrefix(lower, "tap ") ||
+		strings.HasPrefix(lower, "episode ") {
+		return n
+	}
+	return "Tập " + n
 }
 
 // applyAnimeFuzzy lọc và sắp xếp danh sách anime theo query dùng thuật toán fuzzy.

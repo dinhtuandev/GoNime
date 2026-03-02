@@ -45,7 +45,7 @@ var settingsLabels = []string{
 	"📁 Thư mục tải xuống",
 	"🖼  Thư mục ảnh manga",
 	"📐 Kích thước ảnh manga (%)",
-	"🌐 URL nguồn Manga",
+	"🌐 URL nguồn Manga (sẽ được update trong tương lai)",
 }
 
 func NewSettingsModel(parent MainModel) SettingsModel {

@@ -8,7 +8,7 @@ import (
 func TestMangaTrending(t *testing.T) {
 	t.Log("=== Testing Manga Trending ===")
 
-	scraper := NewMangaScraper("https://truyenvn.shop")
+	scraper := NewOTruyenScraper("https://otruyen.cc")
 
 	t.Log("Testing GetTrending...")
 	trendingStart := time.Now()
@@ -40,11 +40,11 @@ func TestMangaTrending(t *testing.T) {
 func TestMangaSearch(t *testing.T) {
 	t.Log("=== Testing Manga Search ===")
 
-	scraper := NewMangaScraper("https://truyenvn.shop")
+	scraper := NewOTruyenScraper("https://otruyen.cc")
 
-	t.Log("Testing search with empty query...")
+	t.Log("Testing search with keyword 'one'...")
 	searchStart := time.Now()
-	searchResults, err := scraper.Search("")
+	searchResults, err := scraper.Search("one")
 	searchDuration := time.Since(searchStart)
 
 	if err != nil {
@@ -68,9 +68,9 @@ func TestMangaSearch(t *testing.T) {
 func TestMangaDetails(t *testing.T) {
 	t.Log("=== Testing Manga Details ===")
 
-	scraper := NewMangaScraper("https://truyenvn.shop")
+	scraper := NewOTruyenScraper("https://otruyen.cc")
 
-	mangas, err := scraper.Search("")
+	mangas, err := scraper.Search("one")
 	if err != nil {
 		t.Logf("Cannot get manga for details test: %v", err)
 		return
@@ -107,9 +107,9 @@ func TestMangaDetails(t *testing.T) {
 func TestChapterImages(t *testing.T) {
 	t.Log("=== Testing Chapter Images ===")
 
-	scraper := NewMangaScraper("https://truyenvn.shop")
+	scraper := NewOTruyenScraper("https://otruyen.cc")
 
-	mangas, err := scraper.Search("")
+	mangas, err := scraper.Search("one")
 	if err != nil || len(mangas) == 0 {
 		t.Logf("Cannot get manga for chapter test: %v", err)
 		return

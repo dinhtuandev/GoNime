@@ -14,17 +14,17 @@ type MangaSource interface {
 }
 
 var AllMangaSources = map[string]MangaSource{
+	"otruyen": NewOTruyenScraper("https://otruyen.cc"),
 	"truyenvn": NewMangaScraper("https://truyenvn.shop"),
-	"truyenqq": NewTruyenQQScraper(),
 }
 
 func GetMangaSourceNames() []string {
-	return []string{"truyenvn", "truyenqq"}
+	return []string{"otruyen", "truyenvn"}
 }
 
 func GetMangaSource(name string) MangaSource {
 	if s, ok := AllMangaSources[name]; ok {
 		return s
 	}
-	return AllMangaSources["truyenvn"]
+	return AllMangaSources["otruyen"]
 }

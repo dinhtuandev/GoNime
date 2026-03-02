@@ -516,11 +516,15 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 			_ = m.cfgManager.AddToHistory(item)
 		}
 
-		// Tìm player
+		// Tìm player & config
+		var cfg *config.Config
 		var playerName = player.GetDefaultPlayer()
 		if m.cfgManager != nil {
-			if cfg, err := m.cfgManager.LoadConfig(); err == nil && cfg.Player != "" {
-				playerName = cfg.Player
+			if c, err := m.cfgManager.LoadConfig(); err == nil {
+				cfg = c
+				if c.Player != "" {
+					playerName = c.Player
+				}
 			}
 		}
 
@@ -547,8 +551,23 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 			title = fmt.Sprintf("GoNime: %s - %s", m.selectedAnime.Name, episodeLabel(ep.Name))
 		}
 
-		err = p.Play(link, title)
-		return playAnimeMsg{err: err}
+		// Chuẩn bị phụ đề & tốc độ
+		var subPath string
+		var speed float64 = 1.0
+		if cfg != nil {
+			if cfg.SubtitlesDir != "" && m.selectedAnime != nil {
+				subPath = findLocalSubtitle(cfg.SubtitlesDir, m.selectedAnime.Slug, ep.Name)
+			}
+			if cfg.PlaybackSpeed > 0 {
+				speed = cfg.PlaybackSpeed
+			}
+		}
+
+		// Gọi player với args tuỳ biến
+		if err := playWithOptions(p, link, title, subPath, speed); err != nil {
+			return playAnimeMsg{err: err}
+		}
+		return playAnimeMsg{err: nil}
 	}
 }
 

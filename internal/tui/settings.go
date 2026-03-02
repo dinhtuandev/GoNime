@@ -38,6 +38,7 @@ type SettingsModel struct {
 	hasMPV   bool
 	hasVLC   bool
 	hasChafa bool
+	hasYTDLP bool
 }
 
 var settingsLabels = []string{
@@ -73,6 +74,11 @@ func (m *SettingsModel) checkDependencies() {
 
 	// Check chafa
 	m.hasChafa = render.IsAvailable()
+
+	// Check yt-dlp (downloader)
+	if d, err := player.NewDownloader(); err == nil && d != nil {
+		m.hasYTDLP = true
+	}
 }
 
 func (m SettingsModel) Init() tea.Cmd {
@@ -259,6 +265,13 @@ func (m SettingsModel) View() string {
 		noChafaHint = "  " + theme.Muted.Render("(cần để xem manga)")
 	}
 	b.WriteString(checkItem("chafa", m.hasChafa) + noChafaHint)
+	b.WriteString("\n")
+
+	ytHint := ""
+	if !m.hasYTDLP {
+		ytHint = "  " + theme.Muted.Render("(cần cho tải tập bằng phím d)")
+	}
+	b.WriteString(checkItem("yt-dlp", m.hasYTDLP) + ytHint)
 	b.WriteString("\n\n")
 
 	// ─── Settings Fields ──────────────────────────────────────────────────────

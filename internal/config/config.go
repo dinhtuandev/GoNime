@@ -19,6 +19,10 @@ type Config struct {
 	MangaImageDir  string `json:"manga_image_dir"`
 	MangaImageSize int    `json:"manga_image_size"`
 	MangaURL       string `json:"manga_url"`
+	// SubtitlesDir là nơi tìm phụ đề cục bộ (.srt/.ass) nếu người dùng muốn tự map.
+	SubtitlesDir string  `json:"subtitles_dir,omitempty"`
+	// PlaybackSpeed là tốc độ phát mặc định (1.0 = bình thường).
+	PlaybackSpeed float64 `json:"playback_speed,omitempty"`
 }
 
 func (c *Config) Validate() error {
@@ -145,6 +149,8 @@ func (m *Manager) getDefaultConfig() *Config {
 		MangaImageDir:  filepath.Join(downloadDir, "manga"),
 		MangaImageSize: 100,
 		MangaURL:       "https://truyenvn.shop",
+		SubtitlesDir:   filepath.Join(downloadDir, "subs"),
+		PlaybackSpeed:  1.0,
 	}
 }
 

@@ -21,6 +21,7 @@ const (
 	settingsFieldMangaDir
 	settingsFieldMangaImageSize
 	settingsFieldMangaURL
+	settingsFieldLanguage
 )
 
 type SettingsModel struct {
@@ -47,6 +48,7 @@ var settingsLabels = []string{
 	"🖼  Thư mục ảnh manga",
 	"📐 Kích thước ảnh manga (%)",
 	"🌐 URL nguồn Manga (sẽ được update trong tương lai)",
+	"🈯 Ngôn ngữ giao diện (vi/en)",
 }
 
 func NewSettingsModel(parent MainModel) SettingsModel {
@@ -100,6 +102,11 @@ func (m SettingsModel) getCurrentValue() string {
 		return fmt.Sprintf("%d", m.cfg.MangaImageSize)
 	case settingsFieldMangaURL:
 		return m.cfg.MangaURL
+	case settingsFieldLanguage:
+		if m.cfg.Language == "" {
+			return "vi"
+		}
+		return m.cfg.Language
 	}
 	return ""
 }
@@ -144,6 +151,11 @@ func (m *SettingsModel) applyEdit() error {
 			return fmt.Errorf("URL không được để trống")
 		}
 		m.cfg.MangaURL = val
+	case settingsFieldLanguage:
+		if val != "vi" && val != "en" {
+			return fmt.Errorf("ngôn ngữ chỉ hỗ trợ 'vi' hoặc 'en'")
+		}
+		m.cfg.Language = val
 	}
 
 	// Lưu config

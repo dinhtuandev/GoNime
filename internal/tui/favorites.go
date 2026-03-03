@@ -24,7 +24,16 @@ type FavoritesModel struct {
 	animeClient *api.AnimeClient
 	posterArt   string // chafa-rendered thumbnail for selected item
 	tick        int
+	tab         favoritesTab
 }
+
+type favoritesTab int
+
+const (
+	favTabAnime favoritesTab = iota
+	favTabManga
+)
+
 
 func NewFavoritesModel(parent MainModel) FavoritesModel {
 	mgr, _ := config.NewManager()
@@ -35,6 +44,7 @@ func NewFavoritesModel(parent MainModel) FavoritesModel {
 		manager:     mgr,
 		animeClient: api.NewAnimeClient(),
 		prevIndex:   -1,
+		tab:         favTabAnime,
 	}
 	return m
 }
@@ -107,38 +117,55 @@ func (m FavoritesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "esc":
 			return m.parent, nil
+		case "1":
+			// Tab Anime
+			if m.tab != favTabAnime {
+				m.tab = favTabAnime
+				m.index = 0
+				m.posterArt = ""
+				if vis := m.visibleIndices(); len(vis) > 0 {
+					return m, fetchPosterForFav(m.items[vis[0]])
+				}
+			}
+		case "2":
+			// Tab Manga
+			if m.tab != favTabManga {
+				m.tab = favTabManga
+				m.index = 0
+				m.posterArt = ""
+				if vis := m.visibleIndices(); len(vis) > 0 {
+					return m, fetchPosterForFav(m.items[vis[0]])
+				}
+			}
 		case "up", "k":
-			if m.index > 0 {
+			if vis := m.visibleIndices(); len(vis) > 0 && m.index > 0 {
 				m.index--
 				m.posterArt = ""
-				if m.index < len(m.items) {
-					return m, fetchPosterForFav(m.items[m.index])
-				}
+				return m, fetchPosterForFav(m.items[vis[m.index]])
 			}
 		case "down", "j":
-			if m.index < len(m.items)-1 {
+			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis)-1 {
 				m.index++
 				m.posterArt = ""
-				if m.index < len(m.items) {
-					return m, fetchPosterForFav(m.items[m.index])
-				}
+				return m, fetchPosterForFav(m.items[vis[m.index]])
 			}
 		case "enter":
-			if len(m.items) > 0 && m.index < len(m.items) {
-				item := m.items[m.index]
+			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
+				item := m.items[vis[m.index]]
 				m.loading = true
 				m.err = nil
 				m.statusMsg = ""
 				return m, m.openFavorite(item)
 			}
 		case "d":
-			if len(m.items) > 0 && m.index < len(m.items) {
-				slug := m.items[m.index].Slug
+			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
+				realIdx := vis[m.index]
+				slug := m.items[realIdx].Slug
 				if m.manager != nil {
 					_ = m.manager.RemoveFromFavorites(slug)
 				}
-				m.items = append(m.items[:m.index], m.items[m.index+1:]...)
-				if m.index >= len(m.items) && m.index > 0 {
+				m.items = append(m.items[:realIdx], m.items[realIdx+1:]...)
+				if m.index > 0 {
 					m.index--
 				}
 				m.statusMsg = "Đã xóa khỏi danh sách yêu thích"
@@ -207,10 +234,41 @@ func scraper_instance() scraper_iface {
 	return newScraper()
 }
 
+// visibleIndices trả về index thực trong m.items theo tab hiện tại.
+func (m FavoritesModel) visibleIndices() []int {
+	var idxs []int
+	for i, it := range m.items {
+		switch m.tab {
+		case favTabAnime:
+			if it.Type != "manga" {
+				idxs = append(idxs, i)
+			}
+		case favTabManga:
+			if it.Type == "manga" {
+				idxs = append(idxs, i)
+			}
+		}
+	}
+	if m.index >= len(idxs) {
+		// Caller sẽ clamp lại index nếu cần.
+	}
+	return idxs
+}
+
 func (m FavoritesModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(drawHeader("⭐", "YÊU THÍCH", nil, theme.Gold))
+	// Tabs: Anime / Manga
+	var tabs []string
+	animeTab := theme.BadgeActive.Render("Anime / Phim")
+	mangaTab := theme.Badge.Render("Manga")
+	if m.tab == favTabManga {
+		animeTab = theme.Badge.Render("Anime / Phim")
+		mangaTab = theme.BadgeActive.Render("Manga")
+	}
+	tabs = append(tabs, animeTab, mangaTab)
+
+	b.WriteString(drawHeader("⭐", "YÊU THÍCH", tabs, theme.Gold))
 	b.WriteString(drawHeaderLine(theme.Gold))
 	b.WriteString("\n\n")
 
@@ -222,23 +280,34 @@ func (m FavoritesModel) View() string {
 		b.WriteString("\n\n")
 	}
 
-	if len(m.items) == 0 {
+	visible := m.visibleIndices()
+
+	if len(visible) == 0 {
 		b.WriteString("  ")
-		b.WriteString(theme.Muted.Render("Chưa có mục yêu thích nào."))
+		if m.tab == favTabAnime {
+			b.WriteString(theme.Muted.Render("Chưa có anime/phim yêu thích nào."))
+		} else {
+			b.WriteString(theme.Muted.Render("Chưa có manga yêu thích nào."))
+		}
 		b.WriteString("\n  ")
 		b.WriteString(theme.Muted.Render("Nhấn "))
 		b.WriteString(theme.HintKey.Render("f"))
-		b.WriteString(theme.Muted.Render(" khi xem anime/manga để thêm vào đây."))
+		if m.tab == favTabAnime {
+			b.WriteString(theme.Muted.Render(" khi xem anime/phim để thêm vào đây."))
+		} else {
+			b.WriteString(theme.Muted.Render(" khi đọc manga để thêm vào đây."))
+		}
 	} else {
 		selNameStyle := lipgloss.NewStyle().Foreground(theme.Gold).Bold(true)
 		normNameStyle := lipgloss.NewStyle().Foreground(theme.TextSecondary)
 		animeTagStyle := lipgloss.NewStyle().Foreground(theme.AnimeAccent).Bold(true)
 		mangaTagStyle := lipgloss.NewStyle().Foreground(theme.MangaAccent).Bold(true)
 
-		// Build left list
+		// Build left list (filtered by tab)
 		var leftB strings.Builder
 		leftB.WriteString("\n")
-		for i, item := range m.items {
+		for row, idx := range visible {
+			item := m.items[idx]
 			var typeTag string
 			if item.Type == "manga" {
 				typeTag = mangaTagStyle.Render("[Manga]")
@@ -247,7 +316,7 @@ func (m FavoritesModel) View() string {
 			}
 			marker := "  "
 			var nameStr string
-			if i == m.index {
+			if row == m.index {
 				marker = "▶ "
 				nameStr = selNameStyle.Render(item.Name)
 			} else {
@@ -256,8 +325,12 @@ func (m FavoritesModel) View() string {
 			leftB.WriteString(fmt.Sprintf("  %s %-10s  %s\n", typeTag, marker, nameStr))
 		}
 		leftB.WriteString("\n  ")
-		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(m.items))))
-		leftB.WriteString(theme.Muted.Render(" mục yêu thích"))
+		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(visible))))
+		if m.tab == favTabAnime {
+			leftB.WriteString(theme.Muted.Render(" anime/phim yêu thích"))
+		} else {
+			leftB.WriteString(theme.Muted.Render(" manga yêu thích"))
+		}
 
 		// Build right poster panel
 		var rightStr string
@@ -284,11 +357,13 @@ func (m FavoritesModel) View() string {
 		}
 
 		leftStyle := lipgloss.NewStyle().Width(50)
-		if rightStr != "" {
-			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), rightStr))
+		rightStyle := lipgloss.NewStyle().Width(40)
+		if rightStr == "" {
+			rightStr = rightStyle.Render("")
 		} else {
-			b.WriteString(leftB.String())
+			rightStr = rightStyle.Render(rightStr)
 		}
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), rightStr))
 	}
 
 	if m.statusMsg != "" {
@@ -299,6 +374,7 @@ func (m FavoritesModel) View() string {
 		"Esc: Quay lại",
 		"↑↓: Di chuyển",
 		"Enter: Mở",
+		"1/2: Anime/Manga",
 		"d: Xóa mục",
 		"c: Xóa tất cả",
 	}))

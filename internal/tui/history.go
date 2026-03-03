@@ -241,11 +241,13 @@ func (m HistoryModel) View() string {
 		}
 
 		leftStyle := lipgloss.NewStyle().Width(52)
-		if rightStr != "" {
-			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), rightStr))
+		rightStyle := lipgloss.NewStyle().Width(40)
+		if rightStr == "" {
+			rightStr = rightStyle.Render("")
 		} else {
-			b.WriteString(leftB.String())
+			rightStr = rightStyle.Render(rightStr)
 		}
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), rightStr))
 	}
 
 	if m.statusMsg != "" {

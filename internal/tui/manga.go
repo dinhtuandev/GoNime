@@ -397,6 +397,10 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chapterList = nil
 				m.index = 0
 				m.err = nil
+				if len(m.trendingList) == 0 {
+					m.loading = true
+					return m, m.fetchTrending()
+				}
 			}
 
 		case "up", "k":

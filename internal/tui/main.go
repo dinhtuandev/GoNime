@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"gonime/internal/config"
+	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,18 +46,23 @@ type MainModel struct {
 	width     int
 	height    int
 	tick      int
+	cfg       *config.Config
 }
 
 func NewMainModel() MainModel {
+	mgr, _ := config.NewManager()
+	cfg, _ := mgr.LoadConfig()
+
 	return MainModel{
 		screen: ScreenMain,
+		cfg:    cfg,
 		menuItems: []MenuItem{
-			{"📺", "Xem Anime", "Khám phá & xem anime vietsub"},
-			{"📚", "Đọc Manga", "Đọc manga từ nhiều nguồn"},
-			{"📜", "Lịch sử", "Xem lại các anime/manga đã xem"},
-			{"⭐", "Yêu thích", "Danh sách anime/manga yêu thích"},
-			{"⚙️ ", "Cài đặt", "Cấu hình ứng dụng"},
-			{"🚪", "Thoát", "Thoát khỏi ứng dụng"},
+			{"📺", i18n.T(cfg, "menu.watch_anime"), i18n.T(cfg, "menu.watch_anime_desc")},
+			{"📚", i18n.T(cfg, "menu.read_manga"), i18n.T(cfg, "menu.read_manga_desc")},
+			{"📜", i18n.T(cfg, "menu.history"), i18n.T(cfg, "menu.history_desc")},
+			{"⭐", i18n.T(cfg, "menu.favorites"), i18n.T(cfg, "menu.favorites_desc")},
+			{"⚙️ ", i18n.T(cfg, "menu.settings"), i18n.T(cfg, "menu.settings_desc")},
+			{"🚪", i18n.T(cfg, "menu.exit"), i18n.T(cfg, "menu.exit_desc")},
 		},
 	}
 }
@@ -103,19 +110,24 @@ func (m MainModel) handleMenuSelection() (tea.Model, tea.Cmd) {
 	switch m.menuIndex {
 	case 0:
 		m.screen = ScreenAnime
-		return NewAnimeModel(m), nil
+		am := NewAnimeModel(m)
+		return am, am.Init()
 	case 1:
 		m.screen = ScreenManga
-		return NewMangaModel(m), nil
+		mm := NewMangaModel(m)
+		return mm, mm.Init()
 	case 2:
 		m.screen = ScreenHistory
-		return NewHistoryModel(m), nil
+		hm := NewHistoryModel(m)
+		return hm, hm.Init()
 	case 3:
 		m.screen = ScreenFavorites
-		return NewFavoritesModel(m), nil
+		fm := NewFavoritesModel(m)
+		return fm, fm.Init()
 	case 4:
 		m.screen = ScreenSettings
-		return NewSettingsModel(m), nil
+		sm := NewSettingsModel(m)
+		return sm, sm.Init()
 	case 5:
 		return m, tea.Quit
 	}
@@ -136,7 +148,7 @@ func (m MainModel) View() string {
 	subtitleStyle := lipgloss.NewStyle().
 		Foreground(theme.TextSecondary).
 		Padding(0, 4)
-	b.WriteString(subtitleStyle.Render("🎌  Anime & Manga CLI Player  ·  Vietnamese Subtitles  🎌"))
+	b.WriteString(subtitleStyle.Render(i18n.T(m.cfg, "app.subtitle")))
 	b.WriteString("\n")
 
 	// ── Divider ───────────────────────────────────────────────────────────────

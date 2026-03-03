@@ -23,6 +23,8 @@ type Config struct {
 	SubtitlesDir string  `json:"subtitles_dir,omitempty"`
 	// PlaybackSpeed là tốc độ phát mặc định (1.0 = bình thường).
 	PlaybackSpeed float64 `json:"playback_speed,omitempty"`
+	// Language: "vi" (mặc định) hoặc "en".
+	Language string `json:"language,omitempty"`
 }
 
 func (c *Config) Validate() error {
@@ -37,6 +39,12 @@ func (c *Config) Validate() error {
 	}
 	if c.MangaImageSize < minMangaImageSize || c.MangaImageSize > maxMangaImageSize {
 		return errors.New("kích thước ảnh manga phải từ 50 đến 200")
+	}
+	if c.PlaybackSpeed <= 0 {
+		c.PlaybackSpeed = 1.0
+	}
+	if c.Language == "" {
+		c.Language = "vi"
 	}
 	return nil
 }

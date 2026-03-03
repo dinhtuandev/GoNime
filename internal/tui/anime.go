@@ -358,6 +358,10 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.index = 0
 			m.err = nil
 			m.statusMsg = ""
+			if len(m.trendingList) == 0 {
+				m.loading = true
+				return m, m.fetchTrending()
+			}
 		case "up", "k":
 			if m.index > 0 {
 				m.index--
@@ -507,7 +511,7 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 			}
 			item := config.HistoryItem{
 				Name:      m.selectedAnime.Name,
-				Episode:   "Tập " + ep.Name,
+				Episode:   episodeLabel(ep.Name),
 				URL:       link,
 				ThumbURL:  thumbURL,
 				Type:      "anime",

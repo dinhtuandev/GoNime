@@ -54,16 +54,20 @@ func NewMainModel() MainModel {
 	cfg, _ := mgr.LoadConfig()
 
 	return MainModel{
-		screen: ScreenMain,
-		cfg:    cfg,
-		menuItems: []MenuItem{
-			{"📺", i18n.T(cfg, "menu.watch_anime"), i18n.T(cfg, "menu.watch_anime_desc")},
-			{"📚", i18n.T(cfg, "menu.read_manga"), i18n.T(cfg, "menu.read_manga_desc")},
-			{"📜", i18n.T(cfg, "menu.history"), i18n.T(cfg, "menu.history_desc")},
-			{"⭐", i18n.T(cfg, "menu.favorites"), i18n.T(cfg, "menu.favorites_desc")},
-			{"⚙️ ", i18n.T(cfg, "menu.settings"), i18n.T(cfg, "menu.settings_desc")},
-			{"🚪", i18n.T(cfg, "menu.exit"), i18n.T(cfg, "menu.exit_desc")},
-		},
+		screen:    ScreenMain,
+		cfg:       cfg,
+		menuItems: getMenu(cfg),
+	}
+}
+
+func getMenu(cfg *config.Config) []MenuItem {
+	return []MenuItem{
+		{"📺", i18n.T(cfg, "menu.watch_anime"), i18n.T(cfg, "menu.watch_anime_desc")},
+		{"📚", i18n.T(cfg, "menu.read_manga"), i18n.T(cfg, "menu.read_manga_desc")},
+		{"📜", i18n.T(cfg, "menu.history"), i18n.T(cfg, "menu.history_desc")},
+		{"⭐", i18n.T(cfg, "menu.favorites"), i18n.T(cfg, "menu.favorites_desc")},
+		{"⚙️ ", i18n.T(cfg, "menu.settings"), i18n.T(cfg, "menu.settings_desc")},
+		{"🚪", i18n.T(cfg, "menu.exit"), i18n.T(cfg, "menu.exit_desc")},
 	}
 }
 
@@ -98,6 +102,11 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "esc":
 			if m.screen != ScreenMain {
+				mgr, _ := config.NewManager()
+				if cfg, err := mgr.LoadConfig(); err == nil {
+					m.cfg = cfg
+					m.menuItems = getMenu(m.cfg)
+				}
 				m.screen = ScreenMain
 			}
 		}
@@ -172,9 +181,9 @@ func (m MainModel) View() string {
 
 	// ── Status bar ────────────────────────────────────────────────────────────
 	b.WriteString(drawStatusBar([]string{
-		"↑↓/jk: Di chuyển",
-		"Enter: Chọn",
-		"q: Thoát",
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_enter_select_2"),
+		i18n.T(m.cfg, "hint_quit"),
 	}))
 	b.WriteString("\n")
 

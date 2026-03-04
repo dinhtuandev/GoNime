@@ -114,57 +114,44 @@ func (s *OTruyenScraper) Search(query string) ([]Manga, error) {
 	return mangas, nil
 }
 
-// GetTrending: lấy từ trang chủ otruyen.cc và quét link truyen-tranh.
 func (s *OTruyenScraper) GetTrending() ([]Manga, error) {
-	doc, err := s.doRequest(s.BaseURL + "/")
+	apiURL := "https://otruyenapi.com/v1/api/home"
+
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GoNime/1.0")
 
-	var mangas []Manga
-	seen := make(map[string]bool)
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("lỗi kết nối tới API OTruyen: %w", err)
+	}
+	defer resp.Body.Close()
 
-	selectors := []string{
-		".page-item-detail .post-title a",
-		".post-title a",
-		".slider__thumb_item a",
-		".c-tabs-item__content .post-title a",
-		".manga-item .manga-title a",
-		"a[href*='/truyen-tranh/']",
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API OTruyen trả về mã lỗi %d", resp.StatusCode)
 	}
 
-	for _, sel := range selectors {
-		doc.Find(sel).Each(func(i int, sel *goquery.Selection) {
-			href, _ := sel.Attr("href")
-			if href == "" || !strings.Contains(href, "/truyen-tranh/") {
-				return
-			}
-			slug := extractSlug(href)
-			if slug == "" || seen[slug] {
-				return
-			}
+	var result otruyenListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("không parse được JSON từ API OTruyen: %w", err)
+	}
 
-			title := strings.TrimSpace(sel.AttrOr("title", ""))
-			if title == "" {
-				title = strings.TrimSpace(sel.Text())
-			}
-			if title == "" {
-				return
-			}
-
-			seen[slug] = true
-			mangas = append(mangas, Manga{
-				Name: title,
-				Slug: slug,
-			})
-		})
+	var mangas []Manga
+	for _, item := range result.Data.Items {
+		m := Manga{
+			Name: strings.TrimSpace(item.Name),
+			Slug: strings.TrimSpace(item.Slug),
+		}
+		if item.ThumbURL != "" && result.Data.AppDomainCdnImage != "" {
+			m.Cover = fmt.Sprintf("%s/uploads/comics/%s", result.Data.AppDomainCdnImage, item.ThumbURL)
+		}
+		mangas = append(mangas, m)
 		if len(mangas) >= 20 {
 			break
 		}
-	}
-
-	if len(mangas) > 20 {
-		mangas = mangas[:20]
 	}
 	return mangas, nil
 }
@@ -365,9 +352,11 @@ type otruyenListResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	Data    struct {
-		Items []struct {
-			Name string `json:"name"`
-			Slug string `json:"slug"`
+		AppDomainCdnImage string `json:"APP_DOMAIN_CDN_IMAGE"`
+		Items             []struct {
+			Name     string `json:"name"`
+			Slug     string `json:"slug"`
+			ThumbURL string `json:"thumb_url"`
 		} `json:"items"`
 	} `json:"data"`
 }
@@ -386,4 +375,3 @@ type otruyenChapterResponse struct {
 		} `json:"item"`
 	} `json:"data"`
 }
-

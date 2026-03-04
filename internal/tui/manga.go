@@ -11,6 +11,7 @@ import (
 	"gonime/internal/fuzzy"
 	"gonime/internal/render"
 	"gonime/internal/scraper"
+	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 	"gonime/internal/viewer"
 
@@ -100,21 +101,25 @@ type MangaModel struct {
 	posterArt       string // chafa-rendered poster for chapters screen
 	scraper         scraper.MangaSource
 	cfgManager      *config.Manager
+	cfg             *config.Config
 	cacheDir        string
 	termWidth       int
 	termHeight      int
 	viewer          viewer.ViewerClient
 	source          string
 	sources         []string
+	lastPlayTime    time.Time
 }
 
 func NewMangaModel(parent MainModel) MangaModel {
 	mgr, _ := config.NewManager()
 
 	cacheDir := ""
+	var cfg *config.Config
 	if mgr != nil {
-		if cfg, err := mgr.LoadConfig(); err == nil {
-			cacheDir = cfg.MangaImageDir
+		if c, err := mgr.LoadConfig(); err == nil {
+			cacheDir = c.MangaImageDir
+			cfg = c
 		}
 	}
 	if cacheDir == "" {
@@ -128,6 +133,7 @@ func NewMangaModel(parent MainModel) MangaModel {
 		screen:     mangaScreenTrending,
 		scraper:    scraper.GetMangaSource("otruyen"),
 		cfgManager: mgr,
+		cfg:        cfg,
 		cacheDir:   cacheDir,
 		termWidth:  100,
 		termHeight: 40,
@@ -282,7 +288,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.source = m.sources[(currentIdx+1)%len(m.sources)]
 				m.scraper = scraper.GetMangaSource(m.source)
-				m.statusMsg = fmt.Sprintf("⚡ Đã chuyển sang nguồn: %s", m.scraper.Name())
+				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.scraper.Name())
 				m.loading = true
 				m.trendingList = nil
 				return m, m.fetchTrending()
@@ -476,9 +482,13 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			switch m.screen {
 			case mangaScreenChapters:
 				if len(m.chapterList) > 0 && m.index < len(m.chapterList) {
+					m.lastPlayTime = time.Now()
 					m.currentChapIdx = m.index
 					m.loading = true
 					m.err = nil
@@ -486,6 +496,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case mangaScreenReading:
 				if m.currentImageIdx < len(m.images)-1 {
+					m.lastPlayTime = time.Now()
 					m.currentImageIdx++
 					m.renderedImage = ""
 					m.renderLoading = true
@@ -494,44 +505,64 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "n":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
 				if m.currentChapIdx > 0 {
+					m.lastPlayTime = time.Now()
 					m.currentChapIdx--
 					m.index = m.currentChapIdx
 					m.loading = true
 					return m, m.loadChapterImages(m.currentChapIdx)
 				}
-				m.statusMsg = "⚠ Đây là chapter mới nhất!"
+				m.statusMsg = "⚠ " + i18n.T(m.cfg, "manga_msg_last_chap")
 			}
 
 		case "p":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
 				if m.currentChapIdx < len(m.chapterList)-1 {
+					m.lastPlayTime = time.Now()
 					m.currentChapIdx++
 					m.index = m.currentChapIdx
 					m.loading = true
 					return m, m.loadChapterImages(m.currentChapIdx)
 				}
-				m.statusMsg = "⚠ Đây là chapter đầu tiên!"
+				m.statusMsg = "⚠ " + i18n.T(m.cfg, "manga_msg_first_chap")
 			}
 
 		case "r":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.screen == mangaScreenReading && len(m.images) > 0 {
+				m.lastPlayTime = time.Now()
 				m.renderedImage = ""
 				m.renderLoading = true
 				return m, m.renderImageCmd(m.currentImageIdx)
 			}
 
 		case "w":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.screen == mangaScreenReading && m.currentChapIdx < len(m.chapterList) {
+				m.lastPlayTime = time.Now()
 				chapURL := m.chapterList[m.currentChapIdx].URL
 				cmd := exec.Command("cmd", "/c", "start", "", chapURL)
 				_ = cmd.Start()
-				m.statusMsg = "🌐 Đang mở trong trình duyệt..."
+				m.statusMsg = "🌐 " + i18n.T(m.cfg, "manga_msg_browser_open")
 			}
 
 		case "o":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.screen == mangaScreenReading && len(m.images) > 0 {
+				m.lastPlayTime = time.Now()
 				return m, m.openInViewer(m.currentImageIdx)
 			}
 
@@ -543,7 +574,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Type: "manga",
 				}
 				if err := m.cfgManager.AddToFavorites(item); err == nil {
-					m.statusMsg = fmt.Sprintf("⭐ Đã thêm '%s'!", m.selectedManga.Name)
+					m.statusMsg = fmt.Sprintf("⭐ %s '%s'!", i18n.T(m.cfg, "status_fav_added"), m.selectedManga.Name)
 				}
 			}
 		}
@@ -687,21 +718,21 @@ func (m MangaModel) View() string {
 	// TRENDING
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenTrending:
-		badges := []string{"🔥 Xu hướng", m.source}
-		b.WriteString(drawHeader("📚", "MANGA", badges, theme.MangaAccent))
+		badges := []string{"🔥 " + i18n.T(m.cfg, "manga_tab_trending"), m.source}
+		b.WriteString(drawHeader("📚", i18n.T(m.cfg, "manga_title"), badges, theme.MangaAccent))
 		b.WriteString(drawHeaderLine(theme.MangaAccent))
 		b.WriteString("\n\n")
 
 		if m.err != nil {
 			b.WriteString(drawErrorLine(m.err.Error()))
 		} else if m.loading {
-			b.WriteString(drawLoadingLine("Đang tải xu hướng...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "manga_loading_trending"), m.tick))
 		} else if len(m.trendingList) == 0 {
 			b.WriteString("  ")
-			b.WriteString(theme.Muted.Render("Không có dữ liệu cho nguồn hiện tại. "))
-			b.WriteString(theme.Muted.Render("Nhấn "))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "manga_empty_trending") + " "))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "manga_empty_trending_hint_1") + " "))
 			b.WriteString(theme.HintKey.Render("m"))
-			b.WriteString(theme.Muted.Render(" để đổi nguồn, hoặc kiểm tra kết nối mạng."))
+			b.WriteString(theme.Muted.Render(" " + i18n.T(m.cfg, "manga_empty_trending_hint_2")))
 			b.WriteString("\n")
 		} else {
 			selStyle := lipgloss.NewStyle().
@@ -729,11 +760,11 @@ func (m MangaModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"m: Đổi nguồn",
-			"s: Tìm kiếm",
-			"Enter: Đọc",
-			"↑↓: Di chuyển",
-			"Esc: Menu",
+			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`s: ` + i18n.T(m.cfg, "hint_search"),
+			i18n.T(m.cfg, "hint_enter_open"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_esc_back"),
 		}))
 		b.WriteString("\n")
 
@@ -741,8 +772,8 @@ func (m MangaModel) View() string {
 	// SEARCH
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenSearch:
-		badges := []string{"🔍 Tìm kiếm", m.source}
-		b.WriteString(drawHeader("📚", "MANGA", badges, theme.MangaAccent))
+		badges := []string{"🔍 " + i18n.T(m.cfg, "manga_tab_search"), m.source}
+		b.WriteString(drawHeader("📚", i18n.T(m.cfg, "manga_title"), badges, theme.MangaAccent))
 		b.WriteString(drawHeaderLine(theme.MangaAccent))
 		b.WriteString("\n\n")
 
@@ -750,19 +781,19 @@ func (m MangaModel) View() string {
 		if m.loading {
 			cursor = ""
 		}
-		b.WriteString(drawInputBox("  Nhập tên manga:", m.searchQuery+cursor, 56,
+		b.WriteString(drawInputBox("  "+i18n.T(m.cfg, "manga_search_prompt"), m.searchQuery+cursor, 56,
 			string(theme.Secondary)))
 		b.WriteString("\n\n")
 
 		if m.err != nil {
-			b.WriteString(drawErrorLine(fmt.Sprintf("Lỗi: %v", m.err)))
+			b.WriteString(drawErrorLine(fmt.Sprintf("%v", m.err)))
 		} else if m.loading {
-			b.WriteString(drawLoadingLine("Đang tìm kiếm...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "manga_loading_search"), m.tick))
 		} else if len(m.mangaList) == 0 {
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render("Gõ tên manga rồi nhấn "))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "manga_search_hint_1") + " "))
 			b.WriteString(theme.HintKey.Render("Enter"))
-			b.WriteString(theme.Muted.Render(" để tìm  (≥2 ký tự)"))
+			b.WriteString(theme.Muted.Render(" " + i18n.T(m.cfg, "manga_search_hint_2")))
 		} else {
 			displayList := m.mangaList
 			if m.searchQuery != "" {
@@ -771,11 +802,11 @@ func (m MangaModel) View() string {
 
 			// Result counter (plain inline text — bordered badges break layout)
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render(fmt.Sprintf("%d kết quả", len(m.mangaList))))
+			b.WriteString(theme.Muted.Render(fmt.Sprintf("%d %s", len(m.mangaList), i18n.T(m.cfg, "manga_search_results"))))
 			if m.searchQuery != "" && len(m.fuzzyResults) < len(m.mangaList) {
 				b.WriteString(theme.Muted.Render("  ·  "))
 				b.WriteString(lipgloss.NewStyle().Foreground(theme.MangaAccent).Bold(true).Render(
-					fmt.Sprintf("~%d khớp", len(m.fuzzyResults))))
+					fmt.Sprintf("~%d %s", len(m.fuzzyResults), i18n.T(m.cfg, "manga_search_fuzzy"))))
 			}
 			b.WriteString("\n\n")
 
@@ -790,7 +821,7 @@ func (m MangaModel) View() string {
 
 			if len(displayList) == 0 && m.searchQuery != "" {
 				b.WriteString("\n  ")
-				b.WriteString(theme.Muted.Render("Không có kết quả khớp với '"))
+				b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "manga_search_no_match") + " '"))
 				b.WriteString(theme.HintKey.Render(m.searchQuery))
 				b.WriteString(theme.Muted.Render("'"))
 				b.WriteString("\n")
@@ -811,11 +842,11 @@ func (m MangaModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"Esc: Xu hướng",
-			"↑↓: Di chuyển",
-			"Enter: Tìm/Chọn",
-			"m: Đổi nguồn",
-			"Ctrl+U: Xóa",
+			"Esc: " + i18n.T(m.cfg, "manga_tab_trending"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_enter_select_2"),
+			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
 		b.WriteString("\n")
 
@@ -823,7 +854,7 @@ func (m MangaModel) View() string {
 	// CHAPTERS
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenChapters:
-		mangaName := "DANH SÁCH CHAPTER"
+		mangaName := i18n.T(m.cfg, "manga_chap_list_title")
 		if m.selectedManga != nil {
 			mangaName = m.selectedManga.Name
 		}
@@ -887,12 +918,12 @@ func (m MangaModel) View() string {
 		}
 
 		if m.loading {
-			b.WriteString(drawLoadingLine("Đang tải danh sách chapter...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "manga_loading_chaps"), m.tick))
 		} else if m.err != nil {
-			b.WriteString(drawErrorLine(fmt.Sprintf("Lỗi: %v", m.err)))
+			b.WriteString(drawErrorLine(fmt.Sprintf("%v", m.err)))
 		} else if len(m.chapterList) == 0 {
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render("Không có chapter nào."))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "manga_empty_chaps")))
 		} else {
 			total := len(m.chapterList)
 			start := 0
@@ -920,7 +951,7 @@ func (m MangaModel) View() string {
 				}
 				readingTag := ""
 				if i == m.currentChapIdx {
-					readingTag = "  " + lipgloss.NewStyle().Foreground(theme.Gold).Bold(true).Render("◀ đọc")
+					readingTag = "  " + lipgloss.NewStyle().Foreground(theme.Gold).Bold(true).Render("◀ "+i18n.T(m.cfg, "manga_tag_reading"))
 				}
 
 				if i == m.index {
@@ -935,7 +966,7 @@ func (m MangaModel) View() string {
 
 			if total > 15 {
 				b.WriteString("\n  ")
-				b.WriteString(theme.Muted.Render(fmt.Sprintf("Tổng: %d chapters", total)))
+				b.WriteString(theme.Muted.Render(fmt.Sprintf("%s: %d", i18n.T(m.cfg, "manga_chap_total"), total)))
 			}
 		}
 
@@ -944,12 +975,12 @@ func (m MangaModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"Esc: Quay lại",
-			"↑↓/jk: Di chuyển",
-			"PgUp/Dn: ±10",
-			"g/G: Đầu/Cuối",
-			"Enter: Đọc",
-			"n/p: Tiếp/Trước",
+			i18n.T(m.cfg, "hint_esc_back"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_pgup_dn"),
+			i18n.T(m.cfg, "hint_start_end"),
+			i18n.T(m.cfg, "hint_enter_read"),
+			i18n.T(m.cfg, "hint_next_prev"),
 			"f: ⭐",
 		}))
 		b.WriteString("\n")
@@ -958,7 +989,7 @@ func (m MangaModel) View() string {
 	// READING
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case mangaScreenReading:
-		chapTitle := "ĐỌC CHAPTER"
+		chapTitle := i18n.T(m.cfg, "manga_reading_title")
 		if m.currentChapIdx < len(m.chapterList) {
 			chapTitle = m.chapterList[m.currentChapIdx].Title
 		}
@@ -974,24 +1005,24 @@ func (m MangaModel) View() string {
 			b.WriteString("\n  ")
 			b.WriteString(theme.ProgressBar(m.currentImageIdx, total, 40))
 			b.WriteString("  ")
-			b.WriteString(theme.Muted.Render(fmt.Sprintf("Trang %d/%d", current, total)))
+			b.WriteString(theme.Muted.Render(fmt.Sprintf("%s %d/%d", i18n.T(m.cfg, "manga_page_prefix"), current, total)))
 		}
 
 		b.WriteString(drawHeaderLine(theme.MangaAccent))
 		b.WriteString("\n\n")
 
 		if m.loading {
-			b.WriteString(drawLoadingLine("Đang tải chapter...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "manga_loading_pages"), m.tick))
 		} else if m.err != nil {
 			b.WriteString(drawErrorLine(fmt.Sprintf("%v", m.err)))
 			b.WriteString("\n")
-			b.WriteString(drawStatusBar([]string{"r: Thử lại", "Esc: Quay lại"}))
+			b.WriteString(drawStatusBar([]string{"r: " + i18n.T(m.cfg, "hint_retry"), i18n.T(m.cfg, "hint_esc_back")}))
 		} else if len(m.images) == 0 {
-			b.WriteString(drawErrorLine("Không tìm thấy ảnh trong chapter này."))
-			b.WriteString(drawStatusBar([]string{"Esc: Quay lại", "w: Trình duyệt"}))
+			b.WriteString(drawErrorLine(i18n.T(m.cfg, "manga_empty_pages")))
+			b.WriteString(drawStatusBar([]string{i18n.T(m.cfg, "hint_esc_back"), "w: " + i18n.T(m.cfg, "hint_browser")}))
 		} else {
 			if m.renderLoading {
-				b.WriteString(drawLoadingLine("Đang render ảnh...", m.tick))
+				b.WriteString(drawLoadingLine(i18n.T(m.cfg, "manga_rendering"), m.tick))
 			} else if m.renderedImage != "" {
 				b.WriteString(m.renderedImage)
 				b.WriteString("\n")
@@ -1001,7 +1032,7 @@ func (m MangaModel) View() string {
 					imgURL = imgURL[:77] + "..."
 				}
 				b.WriteString("  ")
-				b.WriteString(theme.Subtitle.Render(fmt.Sprintf("🖼  Trang %d: %s", current, imgURL)))
+				b.WriteString(theme.Subtitle.Render(fmt.Sprintf("🖼  %s %d: %s", i18n.T(m.cfg, "manga_page_prefix"), current, imgURL)))
 				b.WriteString("\n")
 			}
 
@@ -1012,12 +1043,12 @@ func (m MangaModel) View() string {
 			b.WriteString(chafaStatus)
 
 			b.WriteString(drawStatusBar([]string{
-				"←→/↑↓: Trang",
-				"Enter: Trang sau",
-				"n/p: Chapter",
-				"r: Reload",
-				"o: Viewer",
-				"w: Browser",
+				i18n.T(m.cfg, "hint_nav_page"),
+				i18n.T(m.cfg, "hint_next_page"),
+				i18n.T(m.cfg, "hint_np_chapter"),
+				"r: " + i18n.T(m.cfg, "hint_retry"),
+				i18n.T(m.cfg, "hint_viewer"),
+				i18n.T(m.cfg, "hint_browser"),
 				"f: ⭐",
 			}))
 		}

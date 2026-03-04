@@ -6,6 +6,7 @@ import (
 
 	"gonime/internal/api"
 	"gonime/internal/config"
+	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,27 +25,22 @@ type FavoritesModel struct {
 	animeClient *api.AnimeClient
 	posterArt   string // chafa-rendered thumbnail for selected item
 	tick        int
-	tab         favoritesTab
+	tab         listTab
+	cfg         *config.Config
 }
-
-type favoritesTab int
-
-const (
-	favTabAnime favoritesTab = iota
-	favTabManga
-)
-
 
 func NewFavoritesModel(parent MainModel) FavoritesModel {
 	mgr, _ := config.NewManager()
 	items, _ := mgr.LoadFavorites()
+	cfg, _ := mgr.LoadConfig()
 	m := FavoritesModel{
 		parent:      parent,
 		items:       items,
 		manager:     mgr,
 		animeClient: api.NewAnimeClient(),
 		prevIndex:   -1,
-		tab:         favTabAnime,
+		tab:         tabAnime,
+		cfg:         cfg,
 	}
 	return m
 }
@@ -119,8 +115,8 @@ func (m FavoritesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.parent, nil
 		case "1":
 			// Tab Anime
-			if m.tab != favTabAnime {
-				m.tab = favTabAnime
+			if m.tab != tabAnime {
+				m.tab = tabAnime
 				m.index = 0
 				m.posterArt = ""
 				if vis := m.visibleIndices(); len(vis) > 0 {
@@ -129,8 +125,8 @@ func (m FavoritesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "2":
 			// Tab Manga
-			if m.tab != favTabManga {
-				m.tab = favTabManga
+			if m.tab != tabManga {
+				m.tab = tabManga
 				m.index = 0
 				m.posterArt = ""
 				if vis := m.visibleIndices(); len(vis) > 0 {
@@ -159,23 +155,24 @@ func (m FavoritesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "d":
 			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
-				realIdx := vis[m.index]
-				slug := m.items[realIdx].Slug
+				// realIdx := vis[m.index] // Not needed if we use m.index directly on m.items after filtering
 				if m.manager != nil {
-					_ = m.manager.RemoveFromFavorites(slug)
+					if len(m.items) > 0 && m.index < len(m.items) {
+						m.items = append(m.items[:m.index], m.items[m.index+1:]...)
+						_ = m.manager.SaveFavorites(m.items)
+						if m.index >= len(m.items) && m.index > 0 {
+							m.index--
+						}
+						m.statusMsg = i18n.T(m.cfg, "msg_del_item")
+					}
 				}
-				m.items = append(m.items[:realIdx], m.items[realIdx+1:]...)
-				if m.index > 0 {
-					m.index--
-				}
-				m.statusMsg = "Đã xóa khỏi danh sách yêu thích"
 			}
 		case "c":
 			if m.manager != nil {
 				if err := m.manager.ClearFavorites(); err == nil {
 					m.items = nil
 					m.index = 0
-					m.statusMsg = "Đã xóa toàn bộ danh sách yêu thích"
+					m.statusMsg = i18n.T(m.cfg, "msg_del_all")
 				}
 			}
 		}
@@ -223,8 +220,8 @@ func fetchPosterForFav(item config.FavoriteItem) tea.Cmd {
 		if imageURL == "" {
 			return posterRenderMsg{}
 		}
-		// Delegate to posterCmd's logic
-		cmd := posterCmd(imageURL)
+		// Delegate to thumbnailCmd logic
+		cmd := thumbnailCmd(imageURL)
 		return cmd()
 	}
 }
@@ -239,11 +236,11 @@ func (m FavoritesModel) visibleIndices() []int {
 	var idxs []int
 	for i, it := range m.items {
 		switch m.tab {
-		case favTabAnime:
+		case tabAnime:
 			if it.Type != "manga" {
 				idxs = append(idxs, i)
 			}
-		case favTabManga:
+		case tabManga:
 			if it.Type == "manga" {
 				idxs = append(idxs, i)
 			}
@@ -260,23 +257,24 @@ func (m FavoritesModel) View() string {
 
 	// Tabs: Anime / Manga
 	var tabs []string
-	animeTab := theme.BadgeActive.Render("Anime / Phim")
-	mangaTab := theme.Badge.Render("Manga")
-	if m.tab == favTabManga {
-		animeTab = theme.Badge.Render("Anime / Phim")
-		mangaTab = theme.BadgeActive.Render("Manga")
+	animeTab := theme.BadgeActive.Render(i18n.T(m.cfg, "tab_anime"))
+	mangaTab := theme.Badge.Render(i18n.T(m.cfg, "tab_manga"))
+	if m.tab == tabManga {
+		animeTab = theme.Badge.Render(i18n.T(m.cfg, "tab_anime"))
+		mangaTab = theme.BadgeActive.Render(i18n.T(m.cfg, "tab_manga"))
 	}
 	tabs = append(tabs, animeTab, mangaTab)
 
-	b.WriteString(drawHeader("⭐", "YÊU THÍCH", tabs, theme.Gold))
+	b.WriteString(drawHeader("⭐", i18n.T(m.cfg, "title_favorites"), nil, theme.Gold))
+	b.WriteString(drawTabs(tabs))
 	b.WriteString(drawHeaderLine(theme.Gold))
 	b.WriteString("\n\n")
 
 	if m.loading {
-		b.WriteString(drawLoadingLine("Đang tải...", m.tick))
+		b.WriteString(drawLoadingLine(i18n.T(m.cfg, "loading_generic"), m.tick))
 		b.WriteString("\n")
 	} else if m.err != nil {
-		b.WriteString(drawErrorLine(fmt.Sprintf("Lỗi: %v", m.err)))
+		b.WriteString(drawErrorLine(fmt.Sprintf(i18n.T(m.cfg, "err_prefix"), m.err)))
 		b.WriteString("\n\n")
 	}
 
@@ -284,19 +282,13 @@ func (m FavoritesModel) View() string {
 
 	if len(visible) == 0 {
 		b.WriteString("  ")
-		if m.tab == favTabAnime {
-			b.WriteString(theme.Muted.Render("Chưa có anime/phim yêu thích nào."))
+		if m.tab == tabAnime {
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "empty_fav_anime")))
 		} else {
-			b.WriteString(theme.Muted.Render("Chưa có manga yêu thích nào."))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "empty_fav_manga")))
 		}
 		b.WriteString("\n  ")
-		b.WriteString(theme.Muted.Render("Nhấn "))
-		b.WriteString(theme.HintKey.Render("f"))
-		if m.tab == favTabAnime {
-			b.WriteString(theme.Muted.Render(" khi xem anime/phim để thêm vào đây."))
-		} else {
-			b.WriteString(theme.Muted.Render(" khi đọc manga để thêm vào đây."))
-		}
+		b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "empty_fav_hint_a"))) // Note: I'll use generic hint or split
 	} else {
 		selNameStyle := lipgloss.NewStyle().Foreground(theme.Gold).Bold(true)
 		normNameStyle := lipgloss.NewStyle().Foreground(theme.TextSecondary)
@@ -315,21 +307,21 @@ func (m FavoritesModel) View() string {
 				typeTag = animeTagStyle.Render("[Anime]")
 			}
 			marker := "  "
-			var nameStr string
+			nameStr := truncateString(item.Name, 35) // Truncate to avoid overflow
 			if row == m.index {
 				marker = "▶ "
-				nameStr = selNameStyle.Render(item.Name)
+				nameStr = selNameStyle.Render(nameStr)
 			} else {
-				nameStr = normNameStyle.Render(item.Name)
+				nameStr = normNameStyle.Render(nameStr)
 			}
 			leftB.WriteString(fmt.Sprintf("  %s %-10s  %s\n", typeTag, marker, nameStr))
 		}
 		leftB.WriteString("\n  ")
 		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(visible))))
-		if m.tab == favTabAnime {
-			leftB.WriteString(theme.Muted.Render(" anime/phim yêu thích"))
+		if m.tab == tabAnime {
+			leftB.WriteString(theme.Muted.Render(fmt.Sprintf(" %s", i18n.T(m.cfg, "count_fav_anime"))))
 		} else {
-			leftB.WriteString(theme.Muted.Render(" manga yêu thích"))
+			leftB.WriteString(theme.Muted.Render(fmt.Sprintf(" %s", i18n.T(m.cfg, "count_fav_manga"))))
 		}
 
 		// Build right poster panel
@@ -342,14 +334,14 @@ func (m FavoritesModel) View() string {
 			}
 			accentStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 			var info strings.Builder
-			info.WriteString("\n" + accentStyle.Render(item.Name) + "\n")
+			info.WriteString("\n" + accentStyle.Render(truncateString(item.Name, 45)) + "\n")
 			if item.Type == "manga" {
 				info.WriteString(theme.Muted.Render("📚 Manga") + "\n")
 			} else {
 				info.WriteString(theme.Muted.Render("📺 Anime") + "\n")
 			}
 			posterStyle := lipgloss.NewStyle().Padding(0, 1)
-			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(40)
+			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(45)
 			rightStr = lipgloss.JoinHorizontal(lipgloss.Top,
 				posterStyle.Render(m.posterArt),
 				infoStyle.Render(info.String()),
@@ -357,7 +349,7 @@ func (m FavoritesModel) View() string {
 		}
 
 		leftStyle := lipgloss.NewStyle().Width(50)
-		rightStyle := lipgloss.NewStyle().Width(40)
+		rightStyle := lipgloss.NewStyle().Width(45)
 		if rightStr == "" {
 			rightStr = rightStyle.Render("")
 		} else {
@@ -371,12 +363,12 @@ func (m FavoritesModel) View() string {
 	}
 
 	b.WriteString(drawStatusBar([]string{
-		"Esc: Quay lại",
-		"↑↓: Di chuyển",
-		"Enter: Mở",
-		"1/2: Anime/Manga",
-		"d: Xóa mục",
-		"c: Xóa tất cả",
+		i18n.T(m.cfg, "hint_esc_back"),
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_enter_open"),
+		i18n.T(m.cfg, "hint_switch_tab"),
+		i18n.T(m.cfg, "hint_del_item"),
+		i18n.T(m.cfg, "hint_del_all"),
 	}))
 	b.WriteString("\n")
 

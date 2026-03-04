@@ -14,6 +14,7 @@ import (
 	"gonime/internal/config"
 	"gonime/internal/fuzzy"
 	"gonime/internal/player"
+	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -94,19 +95,23 @@ type AnimeModel struct {
 	tick          int // spinner animation frame counter
 	err           error
 	cfgManager    *config.Manager
+	cfg           *config.Config
 	statusMsg     string
 	source        string
 	sources       []string
 	posterArt     string // chafa-rendered poster for episodes screen
+	lastPlayTime  time.Time
 }
 
 func NewAnimeModel(parent MainModel) AnimeModel {
 	mgr, _ := config.NewManager()
+	cfg, _ := mgr.LoadConfig()
 	sources := api.GetMovieSourceNames()
 	return AnimeModel{
 		parent:     parent,
 		screen:     animeScreenTrending,
 		cfgManager: mgr,
+		cfg:        cfg,
 		source:     "phimapi",
 		sources:    sources,
 		loading:    true,
@@ -195,7 +200,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			if m.currentEpIdx < len(m.episodeList) {
-				m.statusMsg = fmt.Sprintf("▶ Đang phát tập %s", m.episodeList[m.currentEpIdx].Name)
+				m.statusMsg = fmt.Sprintf("%s %s", i18n.T(m.cfg, "anime_playing_ep"), m.episodeList[m.currentEpIdx].Name)
 			}
 		}
 		return m, nil
@@ -207,7 +212,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = ""
 		} else if m.currentEpIdx < len(m.episodeList) {
 			m.err = nil
-			m.statusMsg = fmt.Sprintf("⬇ Đã gửi tải xuống: %s", episodeLabel(m.episodeList[m.currentEpIdx].Name))
+			m.statusMsg = fmt.Sprintf("%s %s", i18n.T(m.cfg, "anime_dl_sent"), episodeLabel(m.episodeList[m.currentEpIdx].Name, m.cfg))
 		}
 		return m, nil
 
@@ -236,7 +241,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.source = m.sources[(currentIdx+1)%len(m.sources)]
-				m.statusMsg = fmt.Sprintf("⚡ Đã chuyển sang nguồn: %s", m.source)
+				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.source)
 				m.loading = true
 				m.trendingList = nil
 				return m, m.fetchTrending()
@@ -284,7 +289,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.source = m.sources[(currentIdx+1)%len(m.sources)]
-				m.statusMsg = fmt.Sprintf("⚡ Đã chuyển sang nguồn: %s", m.source)
+				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.source)
 			case "up":
 				if m.index > 0 {
 					m.index--
@@ -387,28 +392,40 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = len(m.episodeList) - 1
 			}
 		case "enter":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if len(m.episodeList) > 0 && m.index < len(m.episodeList) {
+				m.lastPlayTime = time.Now()
 				m.currentEpIdx = m.index
 				m.statusMsg = ""
 				m.err = nil
 				return m, m.playEpisode(m.index)
 			}
 		case "n":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.currentEpIdx < len(m.episodeList)-1 {
+				m.lastPlayTime = time.Now()
 				m.currentEpIdx++
 				m.index = m.currentEpIdx
 				m.err = nil
 				return m, m.playEpisode(m.currentEpIdx)
 			}
-			m.statusMsg = "⚠ Đây là tập cuối!"
+			m.statusMsg = "⚠ " + i18n.T(m.cfg, "anime_msg_last_ep")
 		case "p":
+			if time.Since(m.lastPlayTime) < 2*time.Second {
+				return m, nil
+			}
 			if m.currentEpIdx > 0 {
+				m.lastPlayTime = time.Now()
 				m.currentEpIdx--
 				m.index = m.currentEpIdx
 				m.err = nil
 				return m, m.playEpisode(m.currentEpIdx)
 			}
-			m.statusMsg = "⚠ Đây là tập đầu!"
+			m.statusMsg = "⚠ " + i18n.T(m.cfg, "anime_msg_first_ep")
 		case "d":
 			// Tải tập hiện tại bằng yt-dlp
 			if len(m.episodeList) > 0 && m.currentEpIdx < len(m.episodeList) {
@@ -424,7 +441,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentEpIdx = 0
 				m.statusMsg = fmt.Sprintf("⚡ Server: %s", m.servers[m.serverIdx].ServerName)
 			} else {
-				m.statusMsg = "Chỉ có 1 server"
+				m.statusMsg = i18n.T(m.cfg, "anime_msg_one_server")
 			}
 		case "f":
 			if m.selectedAnime != nil && m.cfgManager != nil {
@@ -434,7 +451,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Type: "anime",
 				}
 				if err := m.cfgManager.AddToFavorites(item); err == nil {
-					m.statusMsg = fmt.Sprintf("⭐ Đã thêm '%s'!", m.selectedAnime.Name)
+					m.statusMsg = fmt.Sprintf("⭐ %s '%s'!", i18n.T(m.cfg, "status_fav_added"), m.selectedAnime.Name)
 				}
 			}
 		}
@@ -511,7 +528,7 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 			}
 			item := config.HistoryItem{
 				Name:      m.selectedAnime.Name,
-				Episode:   episodeLabel(ep.Name),
+				Episode:   episodeLabel(ep.Name, m.cfg),
 				URL:       link,
 				ThumbURL:  thumbURL,
 				Type:      "anime",
@@ -552,7 +569,7 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 
 		title := "GoNime"
 		if m.selectedAnime != nil {
-			title = fmt.Sprintf("GoNime: %s - %s", m.selectedAnime.Name, episodeLabel(ep.Name))
+			title = fmt.Sprintf("GoNime: %s - %s", m.selectedAnime.Name, episodeLabel(ep.Name, m.cfg))
 		}
 
 		// Chuẩn bị phụ đề & tốc độ
@@ -620,8 +637,8 @@ func (m AnimeModel) downloadEpisode(epIdx int) tea.Cmd {
 	}
 }
 
-// posterCmd downloads a poster image URL and renders it with chafa
-func posterCmd(imageURL string) tea.Cmd {
+// posterSizedCmd downloads a poster image URL and renders it with chafa with a specific size
+func posterSizedCmd(imageURL, size string) tea.Cmd {
 	return func() tea.Msg {
 		if imageURL == "" {
 			return posterRenderMsg{}
@@ -655,7 +672,7 @@ func posterCmd(imageURL string) tea.Cmd {
 		_ = os.Rename(tmpPath, newPath)
 
 		out, err := exec.Command("chafa",
-			"--size", "28x16",
+			"--size", size,
 			"--format", "symbols",
 			newPath,
 		).Output()
@@ -665,6 +682,16 @@ func posterCmd(imageURL string) tea.Cmd {
 		}
 		return posterRenderMsg{rendered: string(out)}
 	}
+}
+
+// posterCmd downloads a poster image URL and renders it with chafa for detail views
+func posterCmd(imageURL string) tea.Cmd {
+	return posterSizedCmd(imageURL, "28x16")
+}
+
+// thumbnailCmd downloads a poster image URL and renders it with chafa for list views
+func thumbnailCmd(imageURL string) tea.Cmd {
+	return posterSizedCmd(imageURL, "14x10")
 }
 
 // --- View ---
@@ -678,21 +705,21 @@ func (m AnimeModel) View() string {
 	// TRENDING SCREEN
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case animeScreenTrending:
-		badges := []string{"🔥 Xu hướng", m.source}
-		b.WriteString(drawHeader("📺", "ANIME / MOVIE", badges, theme.AnimeAccent))
+		badges := []string{"🔥 " + i18n.T(m.cfg, "anime_tab_trending"), m.source}
+		b.WriteString(drawHeader("📺", i18n.T(m.cfg, "anime_title"), badges, theme.AnimeAccent))
 		b.WriteString(drawHeaderLine(theme.AnimeAccent))
 		b.WriteString("\n\n")
 
 		if m.err != nil {
 			b.WriteString(drawErrorLine(m.err.Error()))
 		} else if m.loading {
-			b.WriteString(drawLoadingLine("Đang tải xu hướng...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "anime_loading_trending"), m.tick))
 		} else if len(m.trendingList) == 0 {
 			b.WriteString("  ")
-			b.WriteString(theme.Muted.Render("Không có dữ liệu cho nguồn hiện tại. "))
-			b.WriteString(theme.Muted.Render("Nhấn "))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "anime_empty_trending") + " "))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "anime_empty_trending_hint_1") + " "))
 			b.WriteString(theme.HintKey.Render("m"))
-			b.WriteString(theme.Muted.Render(" để đổi nguồn, hoặc kiểm tra kết nối mạng."))
+			b.WriteString(theme.Muted.Render(" " + i18n.T(m.cfg, "anime_empty_trending_hint_2")))
 			b.WriteString("\n")
 		} else {
 			selStyle := lipgloss.NewStyle().
@@ -726,11 +753,11 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"m: Đổi nguồn",
-			"s: Tìm kiếm",
-			"Enter: Xem",
-			"↑↓: Di chuyển",
-			"Esc: Menu",
+			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`s: ` + i18n.T(m.cfg, "hint_search"),
+			i18n.T(m.cfg, "hint_enter_open"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_esc_back"),
 		}))
 		b.WriteString("\n")
 
@@ -738,8 +765,8 @@ func (m AnimeModel) View() string {
 	// SEARCH SCREEN
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case animeScreenSearch:
-		badges := []string{"🔍 Tìm kiếm", m.source}
-		b.WriteString(drawHeader("📺", "ANIME / MOVIE", badges, theme.AnimeAccent))
+		badges := []string{"🔍 " + i18n.T(m.cfg, "anime_tab_search"), m.source}
+		b.WriteString(drawHeader("📺", i18n.T(m.cfg, "anime_title"), badges, theme.AnimeAccent))
 		b.WriteString(drawHeaderLine(theme.AnimeAccent))
 		b.WriteString("\n\n")
 
@@ -747,19 +774,19 @@ func (m AnimeModel) View() string {
 		if m.loading {
 			cursor = ""
 		}
-		b.WriteString(drawInputBox("  Nhập tên anime:", m.searchQuery+cursor, 56,
+		b.WriteString(drawInputBox("  "+i18n.T(m.cfg, "anime_search_prompt"), m.searchQuery+cursor, 56,
 			string(theme.Secondary)))
 		b.WriteString("\n\n")
 
 		if m.err != nil {
 			b.WriteString(drawErrorLine(m.err.Error()))
 		} else if m.loading {
-			b.WriteString(drawLoadingLine("Đang tìm kiếm...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "anime_loading_search"), m.tick))
 		} else if len(m.animeList) == 0 {
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render("Gõ tên anime rồi nhấn "))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "anime_search_hint_1") + " "))
 			b.WriteString(theme.HintKey.Render("Enter"))
-			b.WriteString(theme.Muted.Render(" để tìm  (≥2 ký tự)"))
+			b.WriteString(theme.Muted.Render(" " + i18n.T(m.cfg, "anime_search_hint_2")))
 		} else {
 			displayList := m.animeList
 			if m.searchQuery != "" {
@@ -768,10 +795,10 @@ func (m AnimeModel) View() string {
 
 			// Result counter (plain inline text — bordered badges break layout)
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render(fmt.Sprintf("%d kết quả", len(m.animeList))))
+			b.WriteString(theme.Muted.Render(fmt.Sprintf("%d %s", len(m.animeList), i18n.T(m.cfg, "anime_search_results"))))
 			if m.searchQuery != "" && len(m.fuzzyResults) < len(m.animeList) {
 				b.WriteString(theme.Muted.Render("  ·  "))
-				b.WriteString(theme.HintKey.Render(fmt.Sprintf("~%d khớp", len(m.fuzzyResults))))
+				b.WriteString(theme.HintKey.Render(fmt.Sprintf("~%d %s", len(m.fuzzyResults), i18n.T(m.cfg, "anime_search_fuzzy"))))
 			}
 			b.WriteString("\n\n")
 
@@ -786,7 +813,7 @@ func (m AnimeModel) View() string {
 
 			if len(displayList) == 0 && m.searchQuery != "" {
 				b.WriteString("\n  ")
-				b.WriteString(theme.Muted.Render("Không có kết quả khớp với '"))
+				b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "anime_search_no_match") + " '"))
 				b.WriteString(theme.HintKey.Render(m.searchQuery))
 				b.WriteString(theme.Muted.Render("'"))
 				b.WriteString("\n")
@@ -812,11 +839,11 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"Esc: Xu hướng",
-			"↑↓: Di chuyển",
-			"Enter: Tìm/Chọn",
-			"m: Đổi nguồn",
-			"Ctrl+U: Xóa",
+			"Esc: " + i18n.T(m.cfg, "anime_tab_trending"), // Actually wait, better to use standard hint
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_enter_select(2)"), // "Enter: Tìm/Chọn"
+			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
 		b.WriteString("\n")
 
@@ -824,7 +851,7 @@ func (m AnimeModel) View() string {
 	// EPISODES SCREEN
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	case animeScreenEpisodes:
-		animeName := "DANH SÁCH TẬP"
+		animeName := i18n.T(m.cfg, "anime_ep_list_title")
 		if m.selectedAnime != nil {
 			animeName = m.selectedAnime.Name
 		}
@@ -909,21 +936,21 @@ func (m AnimeModel) View() string {
 		}
 
 		if m.loading {
-			b.WriteString(drawLoadingLine("Đang tải danh sách tập...", m.tick))
+			b.WriteString(drawLoadingLine(i18n.T(m.cfg, "anime_loading_eps"), m.tick))
 		} else if m.err != nil {
 			b.WriteString(drawErrorLine(m.err.Error()))
 		} else if len(m.episodeList) == 0 {
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render("Không có tập nào."))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "anime_empty_eps")))
 		} else {
 			total := len(m.episodeList)
 
 			// Progress bar
 			b.WriteString("\n  ")
-			b.WriteString(theme.Muted.Render(fmt.Sprintf("Tiến độ  ")))
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "anime_ep_progress") + "  "))
 			b.WriteString(theme.ProgressBar(m.currentEpIdx, total, 32))
 			b.WriteString("  ")
-			b.WriteString(theme.Muted.Render(fmt.Sprintf("%d/%d tập", m.currentEpIdx+1, total)))
+			b.WriteString(theme.Muted.Render(fmt.Sprintf("%d/%d", m.currentEpIdx+1, total)))
 			b.WriteString("\n\n")
 
 			start := 0
@@ -947,10 +974,10 @@ func (m AnimeModel) View() string {
 
 			b.WriteString("\n")
 			b.WriteString(theme.Muted.Render(fmt.Sprintf(
-				"  Tổng: %d tập  ·  Đang xem: %s",
-				total, func() string {
+				"  %s: %d %s  ·  %s: %s",
+				i18n.T(m.cfg, "anime_ep_total"), total, i18n.T(m.cfg, "anime_ep_unit"), i18n.T(m.cfg, "anime_ep_watching"), func() string {
 					if m.currentEpIdx < len(m.episodeList) {
-						return episodeLabel(m.episodeList[m.currentEpIdx].Name)
+						return episodeLabel(m.episodeList[m.currentEpIdx].Name, m.cfg)
 					}
 					return "-"
 				}())))
@@ -966,14 +993,14 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"Esc: Quay lại",
-			"↑↓/jk: Di chuyển",
-			"PgUp/Dn: ±10",
-			"g/G: Đầu/Cuối",
-			"Enter: Phát",
-			"n/p: Tiếp/Trước",
-			"s: Server",
-			"f: ⭐",
+			i18n.T(m.cfg, "hint_esc_back"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_pgup_dn"),
+			i18n.T(m.cfg, "hint_start_end"),
+			i18n.T(m.cfg, "hint_enter_play"),
+			i18n.T(m.cfg, "hint_next_prev"),
+			`s: Server`,
+			`f: ⭐`,
 		}))
 		b.WriteString("\n")
 	}
@@ -985,7 +1012,7 @@ func (m AnimeModel) View() string {
 func (m *AnimeModel) renderEpisodeList(b *strings.Builder, start, end int, sel, norm, ok lipgloss.Style) {
 	for i := start; i < end; i++ {
 		ep := m.episodeList[i]
-		line := episodeLabel(ep.Name)
+		line := episodeLabel(ep.Name, m.cfg)
 
 		if i == m.currentEpIdx {
 			line += "  ▶"
@@ -1006,7 +1033,7 @@ func (m *AnimeModel) renderEpisodeGrid(b *strings.Builder, start, end int, sel, 
 
 	for i := start; i < end; i++ {
 		ep := m.episodeList[i]
-		label := episodeLabel(ep.Name)
+		label := episodeLabel(ep.Name, m.cfg)
 		if len(label) > colWidth-2 {
 			label = label[:colWidth-2]
 		}
@@ -1031,7 +1058,7 @@ func (m *AnimeModel) renderEpisodeGrid(b *strings.Builder, start, end int, sel, 
 // episodeLabel chuẩn hóa nhãn tập, tránh lặp "Tập Tập ..."
 // Nếu tên tập đã bắt đầu bằng "Tập ", "Tap " hoặc "Episode " (không phân biệt hoa/thường),
 // trả về nguyên văn, ngược lại thêm prefix "Tập ".
-func episodeLabel(name string) string {
+func episodeLabel(name string, cfg *config.Config) string {
 	n := strings.TrimSpace(name)
 	if n == "" {
 		return ""
@@ -1042,7 +1069,7 @@ func episodeLabel(name string) string {
 		strings.HasPrefix(lower, "episode ") {
 		return n
 	}
-	return "Tập " + n
+	return i18n.T(cfg, "anime_ep_prefix") + " " + n
 }
 
 // applyAnimeFuzzy lọc và sắp xếp danh sách anime theo query dùng thuật toán fuzzy.

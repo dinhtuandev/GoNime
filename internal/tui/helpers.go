@@ -9,6 +9,24 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// ─── Shared Types ─────────────────────────────────────────────────────────────
+
+type listTab int
+
+const (
+	tabAnime listTab = iota
+	tabManga
+)
+
+// truncateString cuts a string to maxLen and appends "..." if it was longer.
+func truncateString(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) > maxLen && maxLen > 3 {
+		return string(runes[:maxLen-3]) + "..."
+	}
+	return s
+}
+
 // ─── drawInputBox ─────────────────────────────────────────────────────────────
 // Renders a styled input box with neon border:
 //
@@ -89,6 +107,15 @@ func drawHeader(moduleIcon, moduleName string, badges []string, accent lipgloss.
 		}
 	}
 
+	return b.String()
+}
+
+// ─── drawTabs ─────────────────────────────────────────────────────────────────
+// Renders tabs side by side with gap
+func drawTabs(tabs []string) string {
+	var b strings.Builder
+	b.WriteString("\n  ")
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, tabs...))
 	return b.String()
 }
 
@@ -179,24 +206,24 @@ func drawMetaLine(parts []string) string {
 
 // wordWrap wraps text at word boundaries so each line fits within maxWidth runes.
 func wordWrap(text string, maxWidth int) string {
-words := strings.Fields(text)
-if len(words) == 0 {
-return text
-}
-var lines []string
-current := ""
-for _, w := range words {
-if current == "" {
-current = w
-} else if len([]rune(current))+1+len([]rune(w)) <= maxWidth {
-current += " " + w
-} else {
-lines = append(lines, current)
-current = w
-}
-}
-if current != "" {
-lines = append(lines, current)
-}
-return strings.Join(lines, "\n")
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+	var lines []string
+	current := ""
+	for _, w := range words {
+		if current == "" {
+			current = w
+		} else if len([]rune(current))+1+len([]rune(w)) <= maxWidth {
+			current += " " + w
+		} else {
+			lines = append(lines, current)
+			current = w
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return strings.Join(lines, "\n")
 }

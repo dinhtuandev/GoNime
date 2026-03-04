@@ -7,6 +7,7 @@ import (
 	"gonime/internal/api"
 	"gonime/internal/config"
 	"gonime/internal/player"
+	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,24 +25,49 @@ type HistoryModel struct {
 	animeClient *api.AnimeClient
 	posterArt   string // chafa-rendered thumbnail
 	tick        int
+	tab         listTab
+	cfg         *config.Config
+}
+
+// visibleIndices trả về index thực trong m.items theo tab hiện tại.
+func (m HistoryModel) visibleIndices() []int {
+	var idxs []int
+	for i, it := range m.items {
+		switch m.tab {
+		case tabAnime:
+			if it.Type != "manga" {
+				idxs = append(idxs, i)
+			}
+		case tabManga:
+			if it.Type == "manga" {
+				idxs = append(idxs, i)
+			}
+		}
+	}
+	return idxs
 }
 
 func NewHistoryModel(parent MainModel) HistoryModel {
 	mgr, _ := config.NewManager()
 	items, _ := mgr.LoadHistory()
+	cfg, _ := mgr.LoadConfig()
 	m := HistoryModel{
 		parent:      parent,
 		items:       items,
 		manager:     mgr,
 		animeClient: api.NewAnimeClient(),
+		tab:         tabAnime,
+		cfg:         cfg,
 	}
 	return m
 }
 
 func (m HistoryModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{tickCmd()}
-	if len(m.items) > 0 && m.items[0].ThumbURL != "" {
-		cmds = append(cmds, posterCmd(m.items[0].ThumbURL))
+	if vis := m.visibleIndices(); len(vis) > 0 {
+		if url := m.items[vis[0]].ThumbURL; url != "" {
+			cmds = append(cmds, thumbnailCmd(url))
+		}
 	}
 	return tea.Batch(cmds...)
 }
@@ -53,8 +79,9 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			if m.index < len(m.items) {
-				m.statusMsg = fmt.Sprintf("▶ Đang phát: %s - %s", m.items[m.index].Name, m.items[m.index].Episode)
+			if vis := m.visibleIndices(); m.index < len(vis) {
+				realIdx := vis[m.index]
+				m.statusMsg = fmt.Sprintf("▶ Đang phát: %s - %s", m.items[realIdx].Name, m.items[realIdx].Episode)
 			}
 		}
 		return m, nil
@@ -77,44 +104,71 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "esc":
 			return m.parent, nil
+		case "1":
+			// Tab Anime
+			if m.tab != tabAnime {
+				m.tab = tabAnime
+				m.index = 0
+				m.posterArt = ""
+				if vis := m.visibleIndices(); len(vis) > 0 {
+					if url := m.items[vis[0]].ThumbURL; url != "" {
+						return m, thumbnailCmd(url)
+					}
+				}
+			}
+		case "2":
+			// Tab Manga
+			if m.tab != tabManga {
+				m.tab = tabManga
+				m.index = 0
+				m.posterArt = ""
+				if vis := m.visibleIndices(); len(vis) > 0 {
+					if url := m.items[vis[0]].ThumbURL; url != "" {
+						return m, thumbnailCmd(url)
+					}
+				}
+			}
 		case "up", "k":
 			if m.index > 0 {
 				m.index--
 				m.posterArt = ""
-				if m.index < len(m.items) && m.items[m.index].ThumbURL != "" {
-					return m, posterCmd(m.items[m.index].ThumbURL)
+				if vis := m.visibleIndices(); m.index < len(vis) {
+					if url := m.items[vis[m.index]].ThumbURL; url != "" {
+						return m, thumbnailCmd(url)
+					}
 				}
 			}
 		case "down", "j":
-			if m.index < len(m.items)-1 {
+			if vis := m.visibleIndices(); m.index < len(vis)-1 {
 				m.index++
 				m.posterArt = ""
-				if m.index < len(m.items) && m.items[m.index].ThumbURL != "" {
-					return m, posterCmd(m.items[m.index].ThumbURL)
+				if url := m.items[vis[m.index]].ThumbURL; url != "" {
+					return m, thumbnailCmd(url)
 				}
 			}
 		case "enter":
-			if len(m.items) > 0 && m.index < len(m.items) {
-				item := m.items[m.index]
+			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
+				item := m.items[vis[m.index]]
 				m.loading = true
 				m.err = nil
 				m.statusMsg = ""
 				return m, m.playHistoryItem(item)
 			}
 		case "d":
-			if len(m.items) > 0 && m.index < len(m.items) {
-				m.items = append(m.items[:m.index], m.items[m.index+1:]...)
+			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
+				realIdx := vis[m.index]
+				m.items = append(m.items[:realIdx], m.items[realIdx+1:]...)
 				_ = m.manager.SaveHistory(m.items)
-				if m.index >= len(m.items) && m.index > 0 {
+				if m.index >= len(m.visibleIndices()) && m.index > 0 {
 					m.index--
 				}
-				m.statusMsg = "Đã xóa khỏi lịch sử"
+				m.statusMsg = i18n.T(m.cfg, "msg_del_item")
 			}
 		case "c":
 			if err := m.manager.ClearHistory(); err == nil {
 				m.items = nil
 				m.index = 0
-				m.statusMsg = "Đã xóa toàn bộ lịch sử"
+				m.statusMsg = i18n.T(m.cfg, "msg_del_all")
 			}
 		}
 	}
@@ -158,7 +212,17 @@ func (m HistoryModel) playHistoryItem(item config.HistoryItem) tea.Cmd {
 func (m HistoryModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(drawHeader("📜", "LỊCH SỬ XEM", nil, theme.Primary))
+	var tabs []string
+	animeTab := theme.BadgeActive.Render(i18n.T(m.cfg, "tab_anime"))
+	mangaTab := theme.Badge.Render(i18n.T(m.cfg, "tab_manga"))
+	if m.tab == tabManga {
+		animeTab = theme.Badge.Render(i18n.T(m.cfg, "tab_anime"))
+		mangaTab = theme.BadgeActive.Render(i18n.T(m.cfg, "tab_manga"))
+	}
+	tabs = append(tabs, animeTab, mangaTab)
+
+	b.WriteString(drawHeader("📜", i18n.T(m.cfg, "title_history"), nil, theme.Primary))
+	b.WriteString(drawTabs(tabs))
 	b.WriteString(drawHeaderLine(theme.Primary))
 	b.WriteString("\n")
 
@@ -169,11 +233,17 @@ func (m HistoryModel) View() string {
 		b.WriteString("\n")
 	}
 
-	if len(m.items) == 0 {
+	visible := m.visibleIndices()
+
+	if len(visible) == 0 {
 		b.WriteString("  ")
-		b.WriteString(theme.Muted.Render("Chưa có lịch sử xem."))
+		if m.tab == tabAnime {
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "empty_hist_anime")))
+		} else {
+			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "empty_hist_manga")))
+		}
 		b.WriteString("\n  ")
-		b.WriteString(theme.Muted.Render("Xem anime/manga rồi quay lại đây nhé!"))
+		b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "empty_hist_hint")))
 	} else {
 		selStyle := lipgloss.NewStyle().
 			Foreground(theme.Primary).
@@ -190,7 +260,8 @@ func (m HistoryModel) View() string {
 		// Build LEFT list
 		var leftB strings.Builder
 		leftB.WriteString("\n")
-		for i, item := range m.items {
+		for row, idx := range visible {
+			item := m.items[idx]
 			var typeTag string
 			if item.Type == "manga" {
 				typeTag = mangaTypeStyle.Render("📚")
@@ -205,20 +276,27 @@ func (m HistoryModel) View() string {
 			if item.Timestamp != "" {
 				timestamp = "  " + timeStyle.Render(item.Timestamp)
 			}
-			if i == m.index {
-				leftB.WriteString("  " + typeTag + "  " + selStyle.Render("▶  "+item.Name) + epStr + timestamp + "\n")
+
+			dispName := truncateString(item.Name, 30)
+
+			if row == m.index {
+				leftB.WriteString("  " + typeTag + "  " + selStyle.Render("▶  "+dispName) + epStr + timestamp + "\n")
 			} else {
-				leftB.WriteString("  " + typeTag + "  " + normStyle.Render("   "+item.Name) + epStr + timestamp + "\n")
+				leftB.WriteString("  " + typeTag + "  " + normStyle.Render("   "+dispName) + epStr + timestamp + "\n")
 			}
 		}
 		leftB.WriteString("\n  ")
-		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(m.items))))
-		leftB.WriteString(theme.Muted.Render(" mục trong lịch sử"))
+		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(visible))))
+		if m.tab == tabAnime {
+			leftB.WriteString(theme.Muted.Render(fmt.Sprintf(" %s", i18n.T(m.cfg, "count_hist_anime"))))
+		} else {
+			leftB.WriteString(theme.Muted.Render(fmt.Sprintf(" %s", i18n.T(m.cfg, "count_hist_manga"))))
+		}
 
 		// Build RIGHT poster panel
 		var rightStr string
-		if m.posterArt != "" && m.index < len(m.items) {
-			item := m.items[m.index]
+		if m.posterArt != "" && m.index < len(visible) {
+			item := m.items[visible[m.index]]
 			accentColor := theme.AnimeAccent
 			if item.Type == "manga" {
 				accentColor = theme.MangaAccent
@@ -255,11 +333,11 @@ func (m HistoryModel) View() string {
 	}
 
 	b.WriteString(drawStatusBar([]string{
-		"Esc: Quay lại",
-		"↑↓: Di chuyển",
-		"Enter: Mở lại",
-		"d: Xóa mục",
-		"c: Xóa tất cả",
+		i18n.T(m.cfg, "hint_esc_back"),
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_enter_reopen"),
+		i18n.T(m.cfg, "hint_del_item"),
+		i18n.T(m.cfg, "hint_del_all"),
 	}))
 	b.WriteString("\n")
 

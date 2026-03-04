@@ -7,6 +7,7 @@ import (
 	"gonime/internal/config"
 	"gonime/internal/player"
 	"gonime/internal/render"
+	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,13 +43,15 @@ type SettingsModel struct {
 	hasYTDLP bool
 }
 
-var settingsLabels = []string{
-	"🎬 Trình phát video",
-	"📁 Thư mục tải xuống",
-	"🖼  Thư mục ảnh manga",
-	"📐 Kích thước ảnh manga (%)",
-	"🌐 URL nguồn Manga (sẽ được update trong tương lai)",
-	"🈯 Ngôn ngữ giao diện (vi/en)",
+func (m SettingsModel) getLabels() []string {
+	return []string{
+		i18n.T(m.cfg, "set_player"),
+		i18n.T(m.cfg, "set_down_dir"),
+		i18n.T(m.cfg, "set_manga_dir"),
+		i18n.T(m.cfg, "set_manga_size"),
+		i18n.T(m.cfg, "set_manga_src"),
+		i18n.T(m.cfg, "set_lang"),
+	}
 }
 
 func NewSettingsModel(parent MainModel) SettingsModel {
@@ -177,7 +180,12 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.applyEdit(); err != nil {
 					m.err = err
 				} else {
-					m.statusMsg = fmt.Sprintf("✅ Đã lưu: %s", settingsLabels[m.index])
+					labels := m.getLabels()
+					label := ""
+					if m.index < len(labels) {
+						label = labels[m.index]
+					}
+					m.statusMsg = fmt.Sprintf("✅ Saved: %s", label)
 					m.err = nil
 				}
 				m.isEditing = false
@@ -218,7 +226,7 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index--
 			}
 		case "down", "j":
-			if m.index < len(settingsLabels)-1 {
+			if m.index < len(m.getLabels())-1 {
 				m.index++
 			}
 		case "enter", " ":
@@ -234,7 +242,7 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				defaultCfg := config.GetDefaultConfigForManager(m.manager)
 				if err := m.manager.SaveConfig(defaultCfg); err == nil {
 					m.cfg = defaultCfg
-					m.statusMsg = "✅ Đã đặt lại về cấu hình mặc định"
+					m.statusMsg = "✅ Đặt lại mặc định thành công"
 				}
 			}
 		}
@@ -246,7 +254,7 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m SettingsModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(drawHeader("⚙️ ", "CÀI ĐẶT", nil, theme.Gold))
+	b.WriteString(drawHeader("⚙️ ", i18n.T(m.cfg, "title_settings"), nil, theme.Gold))
 	b.WriteString(drawHeaderLine(theme.Gold))
 	b.WriteString("\n\n")
 
@@ -256,16 +264,16 @@ func (m SettingsModel) View() string {
 	}
 
 	// ─── System Check ─────────────────────────────────────────────────────────
-	b.WriteString(drawSectionTitle("KIỂM TRA HỆ THỐNG", theme.Gold))
+	b.WriteString(drawSectionTitle(i18n.T(m.cfg, "set_sys_check"), theme.Gold))
 	b.WriteString("\n\n")
 
 	checkItem := func(name string, has bool) string {
 		if has {
 			return "  " + theme.SuccessText.Render(fmt.Sprintf("✓  %-8s", name)) +
-				"  " + theme.Muted.Render("sẵn sàng")
+				"  " + theme.Muted.Render(i18n.T(m.cfg, "sys_ready"))
 		}
 		return "  " + theme.ErrorText.Render(fmt.Sprintf("✗  %-8s", name)) +
-			"  " + theme.Muted.Render("chưa thấy")
+			"  " + theme.Muted.Render(i18n.T(m.cfg, "sys_not_found"))
 	}
 
 	b.WriteString(checkItem("mpv", m.hasMPV))
@@ -287,15 +295,20 @@ func (m SettingsModel) View() string {
 	b.WriteString("\n\n")
 
 	// ─── Settings Fields ──────────────────────────────────────────────────────
-	b.WriteString(drawSectionTitle("CẤU HÌNH", theme.Gold))
+	b.WriteString(drawSectionTitle(i18n.T(m.cfg, "set_config"), theme.Gold))
 	b.WriteString("\n\n")
 
+	lang := m.cfg.Language
+	if lang == "" {
+		lang = "vi"
+	}
 	values := []string{
 		m.cfg.Player,
 		m.cfg.DownloadDir,
 		m.cfg.MangaImageDir,
 		fmt.Sprintf("%d%%", m.cfg.MangaImageSize),
 		m.cfg.MangaURL,
+		lang,
 	}
 
 	selStyle := lipgloss.NewStyle().
@@ -307,21 +320,25 @@ func (m SettingsModel) View() string {
 	normValStyle := lipgloss.NewStyle().Foreground(theme.TextMuted)
 	selValStyle := lipgloss.NewStyle().Foreground(theme.Primary)
 
-	for i, label := range settingsLabels {
+	for i, label := range m.getLabels() {
 		isSelected := i == m.index
 
 		if isSelected && m.isEditing {
 			b.WriteString(drawInputBox(label, m.editBuffer+"▌", 56, string(theme.Gold)))
 			b.WriteString("\n")
 		} else {
+			val := ""
+			if i < len(values) {
+				val = values[i]
+			}
 			if isSelected {
 				b.WriteString("  " + selStyle.Render("▶  "+label))
 				b.WriteString("\n    ")
-				b.WriteString(selValStyle.Render(values[i]))
+				b.WriteString(selValStyle.Render(val))
 			} else {
 				b.WriteString("  " + normLabelStyle.Render("   "+label))
 				b.WriteString("\n    ")
-				b.WriteString(normValStyle.Render(values[i]))
+				b.WriteString(normValStyle.Render(val))
 			}
 			b.WriteString("\n\n")
 		}
@@ -337,16 +354,15 @@ func (m SettingsModel) View() string {
 
 	if m.isEditing {
 		b.WriteString(drawStatusBar([]string{
-			"Enter: Lưu",
-			"Esc: Hủy",
-			"Backspace: Xóa ký tự",
+			"Enter: OK",
+			"Esc: Cancel",
 		}))
 	} else {
 		b.WriteString(drawStatusBar([]string{
-			"Esc: Quay lại",
-			"↑↓/jk: Di chuyển",
-			"Enter: Sửa",
-			"r: Mặc định",
+			i18n.T(m.cfg, "hint_esc_back"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_enter_edit"),
+			i18n.T(m.cfg, "hint_default"),
 		}))
 	}
 	b.WriteString("\n")

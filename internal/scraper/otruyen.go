@@ -280,8 +280,10 @@ func (s *OTruyenScraper) DownloadImage(ctx context.Context, imageURL string, des
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GoNime/1.0")
-	req.Header.Set("Referer", s.BaseURL)
+	// Use a real browser User-Agent — CDN blocks non-browser agents
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", "https://otruyen.cc/")
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 
 	resp, err := s.Client.Do(req)
 	if err != nil {
@@ -291,10 +293,6 @@ func (s *OTruyenScraper) DownloadImage(ctx context.Context, imageURL string, des
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download image: %s", resp.Status)
-	}
-
-	if resp.ContentLength > maxImageSize && resp.ContentLength > 0 {
-		return "", fmt.Errorf("image too large: %d bytes (max: %d)", resp.ContentLength, maxImageSize)
 	}
 
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -315,8 +313,7 @@ func (s *OTruyenScraper) DownloadImage(ctx context.Context, imageURL string, des
 	}
 	defer out.Close()
 
-	limitedReader := io.LimitReader(resp.Body, maxImageSize)
-	_, err = io.Copy(out, limitedReader)
+	_, err = out.ReadFrom(resp.Body)
 	return destPath, err
 }
 

@@ -19,10 +19,16 @@ type ChafaRenderer struct {
 	cacheDir  string // thư mục cache ảnh
 	Width     int    // chiều rộng terminal (chars)
 	Height    int    // chiều cao terminal (chars)
+	Mode      string // auto | native | chafa
 }
 
 // NewChafaRenderer tạo renderer, tự tìm chafa trong PATH và common paths
 func NewChafaRenderer(cacheDir string, width, height int) (*ChafaRenderer, error) {
+	return NewImageRenderer(cacheDir, width, height, "chafa")
+}
+
+// NewImageRenderer tạo renderer với image mode: auto/native/chafa.
+func NewImageRenderer(cacheDir string, width, height int, mode string) (*ChafaRenderer, error) {
 	path, err := findChafa()
 	if err != nil {
 		return nil, err
@@ -35,7 +41,66 @@ func NewChafaRenderer(cacheDir string, width, height int) (*ChafaRenderer, error
 		cacheDir:  cacheDir,
 		Width:     width,
 		Height:    height,
+		Mode:      NormalizeMode(mode),
 	}, nil
+}
+
+func NormalizeMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "auto", "native", "chafa":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "auto"
+	}
+}
+
+func SupportsNativeImage() bool {
+	term := strings.ToLower(os.Getenv("TERM"))
+	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	if os.Getenv("KITTY_WINDOW_ID") != "" || strings.Contains(term, "kitty") {
+		return true
+	}
+	if strings.Contains(termProgram, "iterm") {
+		return true
+	}
+	if strings.Contains(term, "sixel") {
+		return true
+	}
+	return false
+}
+
+func DetectNativeFormat() string {
+	term := strings.ToLower(os.Getenv("TERM"))
+	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	if os.Getenv("KITTY_WINDOW_ID") != "" || strings.Contains(term, "kitty") {
+		return "kitty"
+	}
+	if strings.Contains(termProgram, "iterm") {
+		return "iterm"
+	}
+	if strings.Contains(term, "sixel") {
+		return "sixels"
+	}
+	return ""
+}
+
+// ResolveEffectiveMode chọn mode thực tế sau khi xét môi trường terminal.
+func ResolveEffectiveMode(mode string) string {
+	mode = NormalizeMode(mode)
+	switch mode {
+	case "native":
+		if SupportsNativeImage() {
+			return "native"
+		}
+		return "chafa"
+	case "chafa":
+		return "chafa"
+	default: // auto
+		if SupportsNativeImage() {
+			return "native"
+		}
+		return "chafa"
+	}
 }
 
 // IsAvailable kiểm tra chafa có cài không (không trả về renderer)
@@ -107,10 +172,41 @@ func (r *ChafaRenderer) RenderFile(path string) (string, error) {
 	}
 
 	size := fmt.Sprintf("%dx%d", w, h)
+	mode := ResolveEffectiveMode(r.Mode)
+
+	if mode == "native" {
+		if out, err := r.renderNative(path, size); err == nil {
+			return out, nil
+		}
+	}
+
+	return r.renderSymbols(path, size)
+}
+
+func (r *ChafaRenderer) renderNative(path, size string) (string, error) {
+	format := DetectNativeFormat()
+	if format == "" {
+		return "", fmt.Errorf("native format not supported")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	cmd := exec.CommandContext(ctx, r.chafaPath,
+		"--size", size,
+		"--format", format,
+		"--animate", "off",
+		path,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
 
+func (r *ChafaRenderer) renderSymbols(path, size string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	// Dùng --symbols block để tương thích tốt với Windows Terminal
 	cmd := exec.CommandContext(ctx, r.chafaPath,
 		"--size", size,

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"gonime/internal/config"
 	"gonime/internal/fuzzy"
 	"gonime/internal/player"
+	"gonime/internal/render"
 	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
 
@@ -302,6 +302,24 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.index < maxIdx {
 					m.index++
+				}
+			case "pgup":
+				if m.index > 0 {
+					m.index -= 10
+					if m.index < 0 {
+						m.index = 0
+					}
+				}
+			case "pgdown":
+				maxIdx := len(m.animeList) - 1
+				if m.searchQuery != "" {
+					maxIdx = len(m.fuzzyResults) - 1
+				}
+				if maxIdx >= 0 {
+					m.index += 10
+					if m.index > maxIdx {
+						m.index = maxIdx
+					}
 				}
 			case "backspace":
 				if len(m.searchQuery) > 0 {
@@ -643,10 +661,6 @@ func posterSizedCmd(imageURL, size string) tea.Cmd {
 		if imageURL == "" {
 			return posterRenderMsg{}
 		}
-		// Check chafa availability
-		if _, err := exec.LookPath("chafa"); err != nil {
-			return posterRenderMsg{rendered: ""}
-		}
 		// Download image to temp file
 		resp, err := http.Get(imageURL) //nolint:noctx
 		if err != nil {
@@ -671,16 +685,24 @@ func posterSizedCmd(imageURL, size string) tea.Cmd {
 		newPath := filepath.Join(filepath.Dir(tmpPath), filepath.Base(tmpPath)+".jpg")
 		_ = os.Rename(tmpPath, newPath)
 
-		out, err := exec.Command("chafa",
-			"--size", size,
-			"--format", "symbols",
-			newPath,
-		).Output()
+		w, h := 28, 16
+		_, _ = fmt.Sscanf(size, "%dx%d", &w, &h)
+		mode := "auto"
+		if mgr, errCfg := config.NewManager(); errCfg == nil {
+			if cfg, errLoad := mgr.LoadConfig(); errLoad == nil && cfg != nil {
+				mode = cfg.ImageMode
+			}
+		}
+		renderer, err := render.NewImageRenderer(os.TempDir(), w, h, mode)
+		if err != nil {
+			return posterRenderMsg{rendered: ""}
+		}
+		out, err := renderer.RenderFile(newPath)
 		_ = os.Remove(newPath)
 		if err != nil {
 			return posterRenderMsg{err: err}
 		}
-		return posterRenderMsg{rendered: string(out)}
+		return posterRenderMsg{rendered: out}
 	}
 }
 
@@ -818,18 +840,40 @@ func (m AnimeModel) View() string {
 				b.WriteString(theme.Muted.Render("'"))
 				b.WriteString("\n")
 			} else {
+				maxRows := 14
+				if m.parent.height > 0 {
+					maxRows = m.parent.height - 18
+					if maxRows < 6 {
+						maxRows = 6
+					}
+					if maxRows > 24 {
+						maxRows = 24
+					}
+				}
+				start, end := windowedRange(len(displayList), m.index, maxRows)
 				for i, anime := range displayList {
+					if i < start || i >= end {
+						continue
+					}
 					yearStr := ""
 					if anime.Year > 0 {
 						yearStr = lipgloss.NewStyle().Foreground(theme.TextMuted).Render(
 							fmt.Sprintf(" (%d)", anime.Year))
 					}
+					related := ""
+					if anime.OriginName != "" && !strings.EqualFold(anime.OriginName, anime.Name) {
+						related = lipgloss.NewStyle().Foreground(theme.TextMuted).Render("  ·  " + truncateString(anime.OriginName, 28))
+					}
 					if i == m.index {
-						b.WriteString("  " + selStyle.Render("▶  "+anime.Name) + yearStr)
+						b.WriteString("  " + selStyle.Render("▶  "+anime.Name) + yearStr + related)
 					} else {
-						b.WriteString("  " + normStyle.Render("   "+anime.Name) + yearStr)
+						b.WriteString("  " + normStyle.Render("   "+anime.Name) + yearStr + related)
 					}
 					b.WriteString("\n")
+				}
+				if len(displayList) > (end - start) {
+					b.WriteString("\n  ")
+					b.WriteString(theme.Muted.Render(fmt.Sprintf("Showing %d-%d / %d", start+1, end, len(displayList))))
 				}
 			}
 		}
@@ -841,7 +885,8 @@ func (m AnimeModel) View() string {
 		b.WriteString(drawStatusBar([]string{
 			"Esc: " + i18n.T(m.cfg, "anime_tab_trending"), // Actually wait, better to use standard hint
 			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_enter_select(2)"), // "Enter: Tìm/Chọn"
+			i18n.T(m.cfg, "hint_pgup_dn"),
+			i18n.T(m.cfg, "hint_enter_select_2"),
 			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
@@ -1080,10 +1125,14 @@ func applyAnimeFuzzy(items []api.AnimeItem, query string) []api.AnimeItem {
 		return items
 	}
 
-	// Chuyển tên thành slice string để dùng fuzzy.FilterAndRank
+	// Fuzzy theo cả tên chính và tên gốc/related title nếu có.
 	names := make([]string, len(items))
 	for i, item := range items {
-		names[i] = item.Name
+		candidate := item.Name
+		if item.OriginName != "" && !strings.EqualFold(item.OriginName, item.Name) {
+			candidate += " " + item.OriginName
+		}
+		names[i] = candidate
 	}
 
 	ranked := fuzzy.FilterAndRank(names, query)

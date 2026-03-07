@@ -119,10 +119,11 @@ func (c *OPhimClient) GetTrending() ([]AnimeItem, string, error) {
 	var animes []AnimeItem
 	for _, m := range result.Home.Trending {
 		animes = append(animes, AnimeItem{
-			Name:      m.Name,
-			Slug:      m.Slug,
-			PosterURL: m.PosterURL,
-			Year:      m.Year,
+			Name:       m.Name,
+			OriginName: m.OriginName,
+			Slug:       m.Slug,
+			PosterURL:  m.PosterURL,
+			Year:       m.Year,
 		})
 	}
 
@@ -149,10 +150,11 @@ func (c *OPhimClient) Search(query string) ([]AnimeItem, string, error) {
 	for _, m := range allMovies {
 		if strings.Contains(strings.ToLower(m.Name), query) {
 			animes = append(animes, AnimeItem{
-				Name:      m.Name,
-				Slug:      m.Slug,
-				PosterURL: m.PosterURL,
-				Year:      m.Year,
+				Name:       m.Name,
+				OriginName: m.OriginName,
+				Slug:       m.Slug,
+				PosterURL:  m.PosterURL,
+				Year:       m.Year,
 			})
 		}
 		if len(animes) >= 20 {

@@ -1,6 +1,7 @@
 package viewer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -38,22 +39,25 @@ func (w *WailsViewerReal) Open(images []string, start int) error {
 	w.images = images
 	w.start = start
 
+	openedNow := false
 	if !w.started {
 		if err := w.startServer(); err != nil {
 			return fmt.Errorf("failed to start viewer server: %v", err)
 		}
 		w.started = true
+		openedNow = true
 	}
 
 	// Update the viewer with new images
 	w.updateViewer()
 
-	// Open browser
-	url := fmt.Sprintf("http://localhost:%d", w.serverPort)
-	log.Printf("[viewer-wails] Opening viewer at %s", url)
-
-	if err := w.openBrowser(url); err != nil {
-		log.Printf("[viewer-wails] Warning: could not open browser: %v", err)
+	// Open browser only on first run. The frontend polls /api/images for updates.
+	if openedNow {
+		url := fmt.Sprintf("http://localhost:%d", w.serverPort)
+		log.Printf("[viewer-wails] Opening viewer at %s", url)
+		if err := w.openBrowser(url); err != nil {
+			log.Printf("[viewer-wails] Warning: could not open browser: %v", err)
+		}
 	}
 
 	return nil
@@ -229,8 +233,7 @@ func (w *WailsViewerReal) updateViewer() {
 		"start":  w.start,
 	})
 
-	http.Post(updateURL, "application/json", nil)
-	_ = payload // payload is sent via POST
+	_, _ = http.Post(updateURL, "application/json", bytes.NewBuffer(payload))
 }
 
 // openBrowser opens the URL in the default browser

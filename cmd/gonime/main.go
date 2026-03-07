@@ -39,7 +39,11 @@ Lấy cảm hứng từ anisub, mang đến trải nghiệm nhanh, nhẹ và m�
 
 // runTUI khởi động giao diện TUI chính
 func runTUI(cmd *cobra.Command, args []string) {
-	p := tea.NewProgram(tui.NewMainModel(), tea.WithAltScreen())
+	p := tea.NewProgram(
+		tui.NewMainModel(),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Lỗi: %v\n", err)
 		os.Exit(1)
@@ -77,7 +81,11 @@ func NewAnimeCommand() *cobra.Command {
 
 			// Mở TUI với kết quả search sẵn
 			fmt.Println("\nMở giao diện TUI để chọn...")
-			p := tea.NewProgram(tui.NewMainModel(), tea.WithAltScreen())
+			p := tea.NewProgram(
+				tui.NewMainModel(),
+				tea.WithAltScreen(),
+				tea.WithMouseCellMotion(),
+			)
 			_, err = p.Run()
 			return err
 		},
@@ -96,7 +104,11 @@ func NewMangaCommand() *cobra.Command {
 			fmt.Println("Mở giao diện TUI để chọn...")
 
 			// Mở TUI - người dùng sẽ search trong TUI
-			p := tea.NewProgram(tui.NewMainModel(), tea.WithAltScreen())
+			p := tea.NewProgram(
+				tui.NewMainModel(),
+				tea.WithAltScreen(),
+				tea.WithMouseCellMotion(),
+			)
 			_, err := p.Run()
 			return err
 		},
@@ -122,7 +134,11 @@ func NewSettingsCommand() *cobra.Command {
 			fmt.Printf("  Kích thước ảnh   : %d%%\n", cfg.MangaImageSize)
 			fmt.Println("\nMở giao diện TUI để chỉnh sửa...")
 
-			p := tea.NewProgram(tui.NewMainModel(), tea.WithAltScreen())
+			p := tea.NewProgram(
+				tui.NewMainModel(),
+				tea.WithAltScreen(),
+				tea.WithMouseCellMotion(),
+			)
 			_, err = p.Run()
 			return err
 		},

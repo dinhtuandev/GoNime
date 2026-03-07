@@ -19,8 +19,9 @@ type Config struct {
 	MangaImageDir  string `json:"manga_image_dir"`
 	MangaImageSize int    `json:"manga_image_size"`
 	MangaURL       string `json:"manga_url"`
+	ImageMode      string `json:"image_mode,omitempty"` // auto | native | chafa
 	// SubtitlesDir là nơi tìm phụ đề cục bộ (.srt/.ass) nếu người dùng muốn tự map.
-	SubtitlesDir string  `json:"subtitles_dir,omitempty"`
+	SubtitlesDir string `json:"subtitles_dir,omitempty"`
 	// PlaybackSpeed là tốc độ phát mặc định (1.0 = bình thường).
 	PlaybackSpeed float64 `json:"playback_speed,omitempty"`
 	// Language: "vi" (mặc định) hoặc "en".
@@ -46,7 +47,17 @@ func (c *Config) Validate() error {
 	if c.Language == "" {
 		c.Language = "vi"
 	}
+	c.ImageMode = NormalizeImageMode(c.ImageMode)
 	return nil
+}
+
+func NormalizeImageMode(mode string) string {
+	switch mode {
+	case "auto", "native", "chafa":
+		return mode
+	default:
+		return "auto"
+	}
 }
 
 type HistoryItem struct {
@@ -117,6 +128,7 @@ func (m *Manager) LoadConfig() (*Config, error) {
 	if cfg.MangaImageSize < minMangaImageSize || cfg.MangaImageSize > maxMangaImageSize {
 		cfg.MangaImageSize = 100
 	}
+	cfg.ImageMode = NormalizeImageMode(cfg.ImageMode)
 
 	return &cfg, nil
 }
@@ -157,6 +169,7 @@ func (m *Manager) getDefaultConfig() *Config {
 		MangaImageDir:  filepath.Join(downloadDir, "manga"),
 		MangaImageSize: 100,
 		MangaURL:       "https://truyenvn.shop",
+		ImageMode:      "auto",
 		SubtitlesDir:   filepath.Join(downloadDir, "subs"),
 		PlaybackSpeed:  1.0,
 	}

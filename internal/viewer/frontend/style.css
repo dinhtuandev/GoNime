@@ -6,7 +6,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #1a1a2e;
+    background-color: #121327;
     color: #eee;
     overflow: hidden;
     height: 100vh;
@@ -24,55 +24,45 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid #0f3460;
-}
-
-.chapter-nav {
-    background: #1a1a3e;
-    padding: 10px 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
-    border-bottom: 2px solid #0f3460;
-}
-
-.chapter-nav button {
-    background: #e94560;
-    padding: 8px 16px;
-}
-
-.chapter-nav button:disabled {
-    background: #444;
-    cursor: not-allowed;
-}
-
-#chapter-info {
-    font-weight: bold;
-    color: #e94560;
-    min-width: 150px;
-    text-align: center;
+    border-bottom: 1px solid #0f3460;
 }
 
 header h1 {
-    font-size: 1.2rem;
-    color: #e94560;
+    font-size: 1.05rem;
+    color: #4dd0ff;
 }
 
 .controls {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 12px;
+}
+
+.chapter-nav {
+    background: #171a34;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid #0f3460;
+}
+
+#chapter-info {
+    font-weight: 700;
+    color: #e94560;
+    min-width: 180px;
+    text-align: center;
 }
 
 button {
     background: #0f3460;
     color: #eee;
     border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
+    padding: 8px 14px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: background 0.3s;
+    transition: background 0.2s;
 }
 
 button:hover {
@@ -85,40 +75,50 @@ button:disabled {
 }
 
 #page-info {
-    font-weight: bold;
-    min-width: 80px;
+    font-weight: 700;
+    min-width: 84px;
     text-align: center;
 }
 
 #viewer-container {
     flex: 1;
     overflow: auto;
+    padding: 16px;
+    background: #0b0c1a;
+}
+
+#manga-column {
+    width: min(980px, 100%);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.manga-page-wrap {
+    width: 100%;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    padding: 20px;
-    background: #0f0f1a;
 }
 
-#manga-image {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    transition: transform 0.2s;
-    cursor: grab;
+.manga-page {
+    width: calc(100% * var(--zoom, 1));
+    max-width: calc(100% * var(--zoom, 1));
+    height: auto;
+    border-radius: 6px;
+    background: #101327;
+    box-shadow: 0 0 0 1px #1f2646;
 }
 
-#manga-image:active {
-    cursor: grabbing;
+.manga-page.active {
+    box-shadow: 0 0 0 2px #25d7ff;
 }
 
 #loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 1.5rem;
+    text-align: center;
     color: #e94560;
+    font-size: 1.1rem;
+    padding: 24px 0;
 }
 
 footer {
@@ -127,15 +127,10 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-top: 2px solid #0f3460;
+    border-top: 1px solid #0f3460;
 }
 
-.navigation {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
+.navigation,
 .zoom-controls {
     display: flex;
     align-items: center;
@@ -153,25 +148,23 @@ footer {
 }
 
 #zoom-level {
-    min-width: 50px;
+    min-width: 52px;
     text-align: center;
 }
 
-/* Scrollbar styling */
 #viewer-container::-webkit-scrollbar {
     width: 10px;
-    height: 10px;
 }
 
 #viewer-container::-webkit-scrollbar-track {
-    background: #1a1a2e;
+    background: #14162a;
 }
 
 #viewer-container::-webkit-scrollbar-thumb {
-    background: #e94560;
+    background: #2b9cc7;
     border-radius: 5px;
 }
 
 #viewer-container::-webkit-scrollbar-thumb:hover {
-    background: #ff6b6b;
+    background: #43b8e6;
 }

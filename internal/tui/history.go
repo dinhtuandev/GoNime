@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -81,7 +82,7 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			if vis := m.visibleIndices(); m.index < len(vis) {
 				realIdx := vis[m.index]
-				m.statusMsg = fmt.Sprintf("▶ Đang phát: %s - %s", m.items[realIdx].Name, m.items[realIdx].Episode)
+				m.statusMsg = fmt.Sprintf("▶ %s %s - %s", i18n.T(m.cfg, "anime_playing_ep"), m.items[realIdx].Name, m.items[realIdx].Episode)
 			}
 		}
 		return m, nil
@@ -146,6 +147,30 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, thumbnailCmd(url)
 				}
 			}
+		case "pgup":
+			if m.index > 0 {
+				m.index -= 10
+				if m.index < 0 {
+					m.index = 0
+				}
+				m.posterArt = ""
+				if vis := m.visibleIndices(); m.index < len(vis) {
+					if url := m.items[vis[m.index]].ThumbURL; url != "" {
+						return m, thumbnailCmd(url)
+					}
+				}
+			}
+		case "pgdown":
+			if vis := m.visibleIndices(); len(vis) > 0 {
+				m.index += 10
+				if m.index >= len(vis) {
+					m.index = len(vis) - 1
+				}
+				m.posterArt = ""
+				if url := m.items[vis[m.index]].ThumbURL; url != "" {
+					return m, thumbnailCmd(url)
+				}
+			}
 		case "enter":
 			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
 				item := m.items[vis[m.index]]
@@ -179,7 +204,7 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m HistoryModel) playHistoryItem(item config.HistoryItem) tea.Cmd {
 	return func() tea.Msg {
 		if item.URL == "" {
-			return playAnimeMsg{err: fmt.Errorf("không có link phát")}
+			return playAnimeMsg{err: errors.New(i18n.T(m.cfg, "err_no_play_url"))}
 		}
 
 		// Lấy config
@@ -227,13 +252,23 @@ func (m HistoryModel) View() string {
 	b.WriteString("\n")
 
 	if m.loading {
-		b.WriteString(drawLoadingLine("Đang khởi động trình phát...", m.tick))
+		b.WriteString(drawLoadingLine(i18n.T(m.cfg, "loading_player"), m.tick))
 	} else if m.err != nil {
-		b.WriteString(drawErrorLine(fmt.Sprintf("Lỗi: %v", m.err)))
+		b.WriteString(drawErrorLine(fmt.Sprintf(i18n.T(m.cfg, "err_prefix"), m.err)))
 		b.WriteString("\n")
 	}
 
 	visible := m.visibleIndices()
+	leftW, rightW := splitPaneWidths(m.parent.width, 60, 38, 34)
+	nameWidth := leftW - 38
+	if nameWidth < 14 {
+		nameWidth = 14
+	}
+	showTimestamp := leftW >= 72
+	epWidth := 18
+	if !showTimestamp {
+		epWidth = 24
+	}
 
 	if len(visible) == 0 {
 		b.WriteString("  ")
@@ -254,48 +289,72 @@ func (m HistoryModel) View() string {
 			Foreground(theme.TextSecondary).
 			Padding(0, 1)
 		timeStyle := lipgloss.NewStyle().Foreground(theme.TextMuted)
-		animeTypeStyle := lipgloss.NewStyle().Foreground(theme.AnimeAccent)
-		mangaTypeStyle := lipgloss.NewStyle().Foreground(theme.MangaAccent)
+		animeTypeStyle := lipgloss.NewStyle().
+			Foreground(theme.AnimeAccent).
+			Background(theme.BackgroundLight).
+			Bold(true).
+			Padding(0, 1)
+		mangaTypeStyle := lipgloss.NewStyle().
+			Foreground(theme.MangaAccent).
+			Background(theme.BackgroundLight).
+			Bold(true).
+			Padding(0, 1)
 
 		// Build LEFT list
 		var leftB strings.Builder
 		leftB.WriteString("\n")
-		for row, idx := range visible {
-			item := m.items[idx]
-			var typeTag string
-			if item.Type == "manga" {
-				typeTag = mangaTypeStyle.Render("📚")
-			} else {
-				typeTag = animeTypeStyle.Render("🎦")
+		maxRows := 12
+		if m.parent.height > 0 {
+			maxRows = m.parent.height - 16
+			if maxRows < 6 {
+				maxRows = 6
 			}
+			if maxRows > 20 {
+				maxRows = 20
+			}
+		}
+		start, end := windowedRange(len(visible), m.index, maxRows)
+		for row := start; row < end; row++ {
+			idx := visible[row]
+			item := m.items[idx]
+			tagText := i18n.T(m.cfg, "label_anime")
+			tagStyle := animeTypeStyle
+			if item.Type == "manga" {
+				tagText = i18n.T(m.cfg, "label_manga")
+				tagStyle = mangaTypeStyle
+			}
+			typeTag := tagStyle.Width(11).Render(tagText)
 			epStr := ""
 			if item.Episode != "" {
-				epStr = "  " + theme.Muted.Render("·  "+item.Episode)
+				epStr = "  " + theme.Muted.Render("·  "+truncateString(item.Episode, epWidth))
 			}
 			timestamp := ""
-			if item.Timestamp != "" {
+			if showTimestamp && item.Timestamp != "" {
 				timestamp = "  " + timeStyle.Render(item.Timestamp)
 			}
 
-			dispName := truncateString(item.Name, 30)
+			dispName := truncateString(item.Name, nameWidth)
 
 			if row == m.index {
-				leftB.WriteString("  " + typeTag + "  " + selStyle.Render("▶  "+dispName) + epStr + timestamp + "\n")
+				leftB.WriteString("  " + typeTag + " " + selStyle.Render("▶  "+dispName) + epStr + timestamp + "\n")
 			} else {
-				leftB.WriteString("  " + typeTag + "  " + normStyle.Render("   "+dispName) + epStr + timestamp + "\n")
+				leftB.WriteString("  " + typeTag + " " + normStyle.Render("   "+dispName) + epStr + timestamp + "\n")
 			}
 		}
 		leftB.WriteString("\n  ")
 		leftB.WriteString(theme.HintKey.Render(fmt.Sprintf("%d", len(visible))))
 		if m.tab == tabAnime {
-			leftB.WriteString(theme.Muted.Render(fmt.Sprintf(" %s", i18n.T(m.cfg, "count_hist_anime"))))
+			leftB.WriteString(theme.Muted.Render(" " + fmt.Sprintf(i18n.T(m.cfg, "count_hist_anime"), len(visible))))
 		} else {
-			leftB.WriteString(theme.Muted.Render(fmt.Sprintf(" %s", i18n.T(m.cfg, "count_hist_manga"))))
+			leftB.WriteString(theme.Muted.Render(" " + fmt.Sprintf(i18n.T(m.cfg, "count_hist_manga"), len(visible))))
+		}
+		if len(visible) > (end - start) {
+			leftB.WriteString(theme.Muted.Render(fmt.Sprintf("  (%d-%d)", start+1, end)))
 		}
 
 		// Build RIGHT poster panel
 		var rightStr string
-		if m.posterArt != "" && m.index < len(visible) {
+		if m.posterArt != "" && m.index < len(visible) && rightW > 0 {
 			item := m.items[visible[m.index]]
 			accentColor := theme.AnimeAccent
 			if item.Type == "manga" {
@@ -303,29 +362,42 @@ func (m HistoryModel) View() string {
 			}
 			accentStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 			var info strings.Builder
-			info.WriteString("\n" + accentStyle.Render(item.Name) + "\n")
+			infoNameWidth := rightW - 20
+			if infoNameWidth < 18 {
+				infoNameWidth = 18
+			}
+			info.WriteString("\n" + accentStyle.Render(truncateString(item.Name, infoNameWidth)) + "\n")
 			if item.Episode != "" {
-				info.WriteString(theme.Muted.Render(item.Episode) + "\n")
+				info.WriteString(theme.Muted.Render(truncateString(item.Episode, infoNameWidth)) + "\n")
+			}
+			if item.Type == "manga" {
+				info.WriteString(theme.Muted.Render(i18n.T(m.cfg, "label_manga")) + "\n")
+			} else {
+				info.WriteString(theme.Muted.Render(i18n.T(m.cfg, "label_anime")) + "\n")
 			}
 			if item.Timestamp != "" {
 				info.WriteString(theme.Muted.Render("📅 "+item.Timestamp) + "\n")
 			}
 			posterStyle := lipgloss.NewStyle().Padding(0, 1)
-			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(40)
+			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(infoNameWidth + 2)
 			rightStr = lipgloss.JoinHorizontal(lipgloss.Top,
 				posterStyle.Render(m.posterArt),
 				infoStyle.Render(info.String()),
 			)
 		}
 
-		leftStyle := lipgloss.NewStyle().Width(52)
-		rightStyle := lipgloss.NewStyle().Width(40)
+		if rightW <= 0 {
+			rightW = 0
+			rightStr = ""
+		}
+		leftStyle := lipgloss.NewStyle().Width(leftW)
+		rightStyle := lipgloss.NewStyle().Width(rightW)
 		if rightStr == "" {
 			rightStr = rightStyle.Render("")
 		} else {
 			rightStr = rightStyle.Render(rightStr)
 		}
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), rightStr))
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), "  ", rightStr))
 	}
 
 	if m.statusMsg != "" {
@@ -335,6 +407,7 @@ func (m HistoryModel) View() string {
 	b.WriteString(drawStatusBar([]string{
 		i18n.T(m.cfg, "hint_esc_back"),
 		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_pgup_dn"),
 		i18n.T(m.cfg, "hint_enter_reopen"),
 		i18n.T(m.cfg, "hint_del_item"),
 		i18n.T(m.cfg, "hint_del_all"),

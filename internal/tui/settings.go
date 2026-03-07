@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,6 +23,7 @@ const (
 	settingsFieldMangaDir
 	settingsFieldMangaImageSize
 	settingsFieldMangaURL
+	settingsFieldImageMode
 	settingsFieldLanguage
 )
 
@@ -37,10 +39,12 @@ type SettingsModel struct {
 	statusMsg    string
 
 	// Trạng thái dependency
-	hasMPV   bool
-	hasVLC   bool
-	hasChafa bool
-	hasYTDLP bool
+	hasMPV         bool
+	hasVLC         bool
+	hasChafa       bool
+	hasYTDLP       bool
+	hasNativeImage bool
+	nativeFormat   string
 }
 
 func (m SettingsModel) getLabels() []string {
@@ -50,6 +54,7 @@ func (m SettingsModel) getLabels() []string {
 		i18n.T(m.cfg, "set_manga_dir"),
 		i18n.T(m.cfg, "set_manga_size"),
 		i18n.T(m.cfg, "set_manga_src"),
+		i18n.T(m.cfg, "set_image_mode"),
 		i18n.T(m.cfg, "set_lang"),
 	}
 }
@@ -84,6 +89,10 @@ func (m *SettingsModel) checkDependencies() {
 	if d, err := player.NewDownloader(); err == nil && d != nil {
 		m.hasYTDLP = true
 	}
+
+	// Check terminal native image support (kitty/sixel/iterm)
+	m.hasNativeImage = render.SupportsNativeImage()
+	m.nativeFormat = render.DetectNativeFormat()
 }
 
 func (m SettingsModel) Init() tea.Cmd {
@@ -105,6 +114,8 @@ func (m SettingsModel) getCurrentValue() string {
 		return fmt.Sprintf("%d", m.cfg.MangaImageSize)
 	case settingsFieldMangaURL:
 		return m.cfg.MangaURL
+	case settingsFieldImageMode:
+		return config.NormalizeImageMode(m.cfg.ImageMode)
 	case settingsFieldLanguage:
 		if m.cfg.Language == "" {
 			return "vi"
@@ -116,54 +127,60 @@ func (m SettingsModel) getCurrentValue() string {
 
 func (m *SettingsModel) applyEdit() error {
 	if m.cfg == nil {
-		return fmt.Errorf("cấu hình không khả dụng")
+		return errors.New(i18n.T(m.cfg, "set_err_cfg_unavailable"))
 	}
 
 	val := strings.TrimSpace(m.editBuffer)
 	switch settingsField(m.index) {
 	case settingsFieldPlayer:
 		if val == "" {
-			return fmt.Errorf("tên trình phát không được để trống")
+			return errors.New(i18n.T(m.cfg, "set_err_player_empty"))
 		}
 		m.cfg.Player = val
 
 	case settingsFieldDownloadDir:
 		if val == "" {
-			return fmt.Errorf("thư mục tải không được để trống")
+			return errors.New(i18n.T(m.cfg, "set_err_download_dir_empty"))
 		}
 		m.cfg.DownloadDir = val
 
 	case settingsFieldMangaDir:
 		if val == "" {
-			return fmt.Errorf("thư mục manga không được để trống")
+			return errors.New(i18n.T(m.cfg, "set_err_manga_dir_empty"))
 		}
 		m.cfg.MangaImageDir = val
 
 	case settingsFieldMangaImageSize:
 		var size int
 		if _, err := fmt.Sscanf(val, "%d", &size); err != nil {
-			return fmt.Errorf("vui lòng nhập số từ 50 đến 200")
+			return errors.New(i18n.T(m.cfg, "set_err_size_number"))
 		}
 		if size < 50 || size > 200 {
-			return fmt.Errorf("kích thước phải từ 50 đến 200")
+			return errors.New(i18n.T(m.cfg, "set_err_size_range"))
 		}
 		m.cfg.MangaImageSize = size
 
 	case settingsFieldMangaURL:
 		if val == "" {
-			return fmt.Errorf("URL không được để trống")
+			return errors.New(i18n.T(m.cfg, "set_err_url_empty"))
 		}
 		m.cfg.MangaURL = val
+	case settingsFieldImageMode:
+		mode := config.NormalizeImageMode(strings.ToLower(val))
+		if mode != "auto" && mode != "native" && mode != "chafa" {
+			return errors.New(i18n.T(m.cfg, "set_err_image_mode"))
+		}
+		m.cfg.ImageMode = mode
 	case settingsFieldLanguage:
 		if val != "vi" && val != "en" {
-			return fmt.Errorf("ngôn ngữ chỉ hỗ trợ 'vi' hoặc 'en'")
+			return errors.New(i18n.T(m.cfg, "set_err_lang"))
 		}
 		m.cfg.Language = val
 	}
 
 	// Lưu config
 	if err := m.manager.SaveConfig(m.cfg); err != nil {
-		return fmt.Errorf("không lưu được cấu hình: %v", err)
+		return fmt.Errorf(i18n.T(m.cfg, "set_err_save"), err)
 	}
 	return nil
 }
@@ -185,7 +202,7 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.index < len(labels) {
 						label = labels[m.index]
 					}
-					m.statusMsg = fmt.Sprintf("✅ Saved: %s", label)
+					m.statusMsg = fmt.Sprintf(i18n.T(m.cfg, "set_saved"), label)
 					m.err = nil
 				}
 				m.isEditing = false
@@ -242,7 +259,7 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				defaultCfg := config.GetDefaultConfigForManager(m.manager)
 				if err := m.manager.SaveConfig(defaultCfg); err == nil {
 					m.cfg = defaultCfg
-					m.statusMsg = "✅ Đặt lại mặc định thành công"
+					m.statusMsg = i18n.T(m.cfg, "set_reset_ok")
 				}
 			}
 		}
@@ -259,7 +276,7 @@ func (m SettingsModel) View() string {
 	b.WriteString("\n\n")
 
 	if m.cfg == nil {
-		b.WriteString(drawErrorLine("Không thể tải cấu hình."))
+		b.WriteString(drawErrorLine(i18n.T(m.cfg, "set_err_load")))
 		return b.String()
 	}
 
@@ -282,16 +299,26 @@ func (m SettingsModel) View() string {
 	b.WriteString("\n")
 	noChafaHint := ""
 	if !m.hasChafa {
-		noChafaHint = "  " + theme.Muted.Render("(cần để xem manga)")
+		noChafaHint = "  " + theme.Muted.Render(i18n.T(m.cfg, "set_need_chafa"))
 	}
 	b.WriteString(checkItem("chafa", m.hasChafa) + noChafaHint)
 	b.WriteString("\n")
 
 	ytHint := ""
 	if !m.hasYTDLP {
-		ytHint = "  " + theme.Muted.Render("(cần cho tải tập bằng phím d)")
+		ytHint = "  " + theme.Muted.Render(i18n.T(m.cfg, "set_need_ytdlp"))
 	}
 	b.WriteString(checkItem("yt-dlp", m.hasYTDLP) + ytHint)
+	b.WriteString("\n")
+	nativeName := "native-img"
+	if m.nativeFormat != "" {
+		nativeName = "native-" + m.nativeFormat
+	}
+	nativeHint := ""
+	if !m.hasNativeImage {
+		nativeHint = "  " + theme.Muted.Render(i18n.T(m.cfg, "set_need_native_terminal"))
+	}
+	b.WriteString(checkItem(nativeName, m.hasNativeImage) + nativeHint)
 	b.WriteString("\n\n")
 
 	// ─── Settings Fields ──────────────────────────────────────────────────────
@@ -308,6 +335,7 @@ func (m SettingsModel) View() string {
 		m.cfg.MangaImageDir,
 		fmt.Sprintf("%d%%", m.cfg.MangaImageSize),
 		m.cfg.MangaURL,
+		config.NormalizeImageMode(m.cfg.ImageMode),
 		lang,
 	}
 
@@ -342,6 +370,10 @@ func (m SettingsModel) View() string {
 			}
 			b.WriteString("\n\n")
 		}
+	}
+
+	if config.NormalizeImageMode(m.cfg.ImageMode) == "native" && !m.hasNativeImage {
+		b.WriteString(drawWarningLine(i18n.T(m.cfg, "set_warn_native_unsupported")))
 	}
 
 	if m.err != nil {

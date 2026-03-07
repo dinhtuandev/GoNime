@@ -11,30 +11,30 @@
         <header>
             <h1 id="manga-title">Manga Viewer</h1>
             <div class="controls">
-                <button id="prev-btn" onclick="prevPage()">◀ Trước</button>
+                <button id="prev-btn" onclick="prevPage()">◀ Prev</button>
                 <span id="page-info">0 / 0</span>
-                <button id="next-btn" onclick="nextPage()">Sau ▶</button>
+                <button id="next-btn" onclick="nextPage()">Next ▶</button>
             </div>
         </header>
-        
+
         <div class="chapter-nav">
-            <button onclick="prevChapter()" id="prev-chapter-btn">⏮ Chapter Trước</button>
-            <span id="chapter-info">Chapter 1</span>
-            <button onclick="nextChapter()" id="next-chapter-btn">Chapter Sau ⏭</button>
+            <button onclick="prevChapter()" id="prev-chapter-btn">⏮ Prev Chapter</button>
+            <span id="chapter-info">Chapter</span>
+            <button onclick="nextChapter()" id="next-chapter-btn">Next Chapter ⏭</button>
         </div>
-        
+
         <main id="viewer-container">
-            <div id="loading">Đang tải...</div>
-            <img id="manga-image" src="" alt="Manga page" onload="imageLoaded()" onerror="imageError()">
+            <div id="loading">Loading...</div>
+            <div id="manga-column"></div>
         </main>
-        
+
         <footer>
             <div class="navigation">
-                <button onclick="firstPage()">⏮ Đầu</button>
-                <button onclick="prevPage()">◀ Trước</button>
+                <button onclick="firstPage()">⏮ First</button>
+                <button onclick="prevPage()">◀ Prev</button>
                 <input type="number" id="page-input" min="1" value="1" onchange="goToPage(this.value)">
-                <button onclick="nextPage()">Sau ▶</button>
-                <button onclick="lastPage()">⏭ Cuối</button>
+                <button onclick="nextPage()">Next ▶</button>
+                <button onclick="lastPage()">Last ⏭</button>
             </div>
             <div class="zoom-controls">
                 <button onclick="zoomOut()">➖</button>
@@ -44,7 +44,7 @@
             </div>
         </footer>
     </div>
-    
+
     <script src="app.js"></script>
 </body>
 </html>

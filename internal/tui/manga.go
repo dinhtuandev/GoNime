@@ -60,12 +60,6 @@ type thumbnailRenderMsg struct {
 	err      error
 }
 
-// viewerOpenMsg is emitted when the viewer is opened for a given image index
-type viewerOpenMsg struct {
-	imageIdx int
-	err      error
-}
-
 // --- State ---
 
 type mangaScreen int
@@ -150,15 +144,6 @@ func (m MangaModel) Init() tea.Cmd {
 
 func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case viewerOpenMsg:
-		m.currentImageIdx = msg.imageIdx
-		m.renderLoading = false
-		if msg.err != nil {
-			m.err = msg.err
-		} else {
-			m.err = nil
-		}
-		return m, nil
 	case thumbnailRenderMsg:
 		// Update UI with thumbnail render result
 		m.renderedImage = msg.rendered
@@ -579,9 +564,76 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		if msg.Action != tea.MouseActionPress {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return m.handleMouseWheel(-1)
+		case tea.MouseButtonWheelDown:
+			return m.handleMouseWheel(1)
+		}
 	}
 
 	return m, nil
+}
+
+func (m MangaModel) handleMouseWheel(delta int) (tea.Model, tea.Cmd) {
+	switch m.screen {
+	case mangaScreenReading:
+		nextIdx := m.currentImageIdx + delta
+		if nextIdx < 0 || nextIdx >= len(m.images) {
+			return m, nil
+		}
+		m.currentImageIdx = nextIdx
+		m.renderedImage = ""
+		m.renderLoading = true
+		return m, m.renderImageCmd(m.currentImageIdx)
+	case mangaScreenChapters:
+		nextIdx := m.index + delta
+		if nextIdx < 0 {
+			nextIdx = 0
+		}
+		if nextIdx >= len(m.chapterList) {
+			nextIdx = len(m.chapterList) - 1
+		}
+		if nextIdx >= 0 {
+			m.index = nextIdx
+		}
+		return m, nil
+	case mangaScreenTrending:
+		nextIdx := m.index + delta
+		if nextIdx < 0 {
+			nextIdx = 0
+		}
+		if nextIdx >= len(m.trendingList) {
+			nextIdx = len(m.trendingList) - 1
+		}
+		if nextIdx >= 0 {
+			m.index = nextIdx
+		}
+		return m, nil
+	case mangaScreenSearch:
+		displayLen := len(m.mangaList)
+		if m.searchQuery != "" {
+			displayLen = len(m.fuzzyResults)
+		}
+		if displayLen == 0 {
+			return m, nil
+		}
+		nextIdx := m.index + delta
+		if nextIdx < 0 {
+			nextIdx = 0
+		}
+		if nextIdx >= displayLen {
+			nextIdx = displayLen - 1
+		}
+		m.index = nextIdx
+		return m, nil
+	default:
+		return m, nil
+	}
 }
 
 // --- Commands ---
@@ -643,13 +695,6 @@ func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 		}
 
 		imageURL := m.images[imageIdx]
-		// Try to open using the viewer (thumbnail path). If viewer is available, delegate to it.
-		if m.viewer != nil {
-			if err := m.viewer.Open(m.images, imageIdx); err != nil {
-				return viewerOpenMsg{imageIdx: imageIdx, err: err}
-			}
-			return viewerOpenMsg{imageIdx: imageIdx, err: nil}
-		}
 
 		w := m.termWidth - 2
 		h := m.termHeight - 8
@@ -663,7 +708,11 @@ func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		renderer, err := render.NewChafaRenderer(m.cacheDir, w, h)
+		mode := "auto"
+		if m.cfg != nil {
+			mode = m.cfg.ImageMode
+		}
+		renderer, err := render.NewImageRenderer(m.cacheDir, w, h, mode)
 		if err != nil {
 			return chafaRenderMsg{
 				imageIdx: imageIdx,
@@ -691,19 +740,10 @@ func (m MangaModel) openInViewer(imageIdx int) tea.Cmd {
 		if imageIdx < 0 || imageIdx >= len(m.images) {
 			return mangaPlayMsg{err: fmt.Errorf("không có ảnh để mở")}
 		}
-
-		imageURL := m.images[imageIdx]
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		path, err := m.scraper.DownloadImage(ctx, imageURL, m.cacheDir)
-		if err != nil {
-			return mangaPlayMsg{err: fmt.Errorf("không tải được ảnh: %v", err)}
+		if m.viewer == nil {
+			return mangaPlayMsg{err: fmt.Errorf("viewer chưa sẵn sàng")}
 		}
-
-		cmd := exec.Command("cmd", "/c", "start", "", path)
-		err = cmd.Start()
-		return mangaPlayMsg{err: err}
+		return mangaPlayMsg{err: m.viewer.Open(m.images, imageIdx)}
 	}
 }
 
@@ -1044,6 +1084,7 @@ func (m MangaModel) View() string {
 
 			b.WriteString(drawStatusBar([]string{
 				i18n.T(m.cfg, "hint_nav_page"),
+				i18n.T(m.cfg, "hint_wheel_page"),
 				i18n.T(m.cfg, "hint_next_page"),
 				i18n.T(m.cfg, "hint_np_chapter"),
 				"r: " + i18n.T(m.cfg, "hint_retry"),

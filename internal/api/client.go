@@ -28,10 +28,11 @@ type SearchData struct {
 }
 
 type AnimeItem struct {
-	Name      string `json:"name"`
-	Slug      string `json:"slug"`
-	Year      int    `json:"year"`
-	PosterURL string `json:"poster_url"`
+	Name       string `json:"name"`
+	OriginName string `json:"origin_name,omitempty"`
+	Slug       string `json:"slug"`
+	Year       int    `json:"year"`
+	PosterURL  string `json:"poster_url"`
 }
 
 // --- Episode Response Structs ---

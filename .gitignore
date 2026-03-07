@@ -56,3 +56,6 @@ assets/*.webp
 
 # node_module
 node_modules/
+
+# Agent
+.agent/

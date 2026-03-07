@@ -80,3 +80,35 @@ func TestHistory(t *testing.T) {
 		t.Errorf("Tên history không khớp: %s", items[0].Name)
 	}
 }
+
+func TestNormalizeImageMode(t *testing.T) {
+	tests := map[string]string{
+		"auto":   "auto",
+		"native": "native",
+		"chafa":  "chafa",
+		"foo":    "auto",
+		"":       "auto",
+	}
+	for in, want := range tests {
+		if got := NormalizeImageMode(in); got != want {
+			t.Fatalf("NormalizeImageMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestConfigValidateSetsImageModeDefault(t *testing.T) {
+	cfg := &Config{
+		Player:         "mpv",
+		DownloadDir:    "C:/tmp",
+		MangaImageDir:  "C:/tmp/manga",
+		MangaImageSize: 100,
+		MangaURL:       "https://example.com",
+		ImageMode:      "invalid",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() unexpected error: %v", err)
+	}
+	if cfg.ImageMode != "auto" {
+		t.Fatalf("expected image mode normalized to auto, got %q", cfg.ImageMode)
+	}
+}

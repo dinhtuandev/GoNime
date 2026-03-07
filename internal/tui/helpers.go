@@ -1,4 +1,4 @@
-﻿package tui
+package tui
 
 import (
 	"strings"
@@ -111,11 +111,32 @@ func drawHeader(moduleIcon, moduleName string, badges []string, accent lipgloss.
 }
 
 // ─── drawTabs ─────────────────────────────────────────────────────────────────
-// Renders tabs side by side with gap
+// Renders tabs side by side with gap, properly indenting all lines of
+// multi-line badge output (rounded borders span 3 lines).
 func drawTabs(tabs []string) string {
+	if len(tabs) == 0 {
+		return "\n"
+	}
+	rendered := make([]string, 0, len(tabs))
+	space := lipgloss.NewStyle().MarginRight(1)
+	for i, tab := range tabs {
+		if i < len(tabs)-1 {
+			rendered = append(rendered, space.Render(tab))
+		} else {
+			rendered = append(rendered, tab)
+		}
+	}
+	joined := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	// Indent every line so the border box is aligned, not just the first line.
 	var b strings.Builder
-	b.WriteString("\n  ")
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, tabs...))
+	b.WriteString("\n")
+	for i, line := range strings.Split(joined, "\n") {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("  ")
+		b.WriteString(line)
+	}
 	return b.String()
 }
 
@@ -226,4 +247,61 @@ func wordWrap(text string, maxWidth int) string {
 		lines = append(lines, current)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func contentWidth(windowWidth int) int {
+	if windowWidth <= 0 {
+		return 96
+	}
+	if windowWidth < 68 {
+		return 64
+	}
+	return windowWidth - 4
+}
+
+func splitPaneWidths(windowWidth int, minLeft int, preferredRight int, minRight int) (int, int) {
+	total := contentWidth(windowWidth)
+	if total <= minLeft+2 {
+		return total, 0
+	}
+	right := preferredRight
+	if total < minLeft+preferredRight+2 {
+		right = total - minLeft - 2
+	}
+	if right < minRight {
+		return total, 0
+	}
+	left := total - right - 2
+	if left < minLeft {
+		return total, 0
+	}
+	return left, right
+}
+
+func windowedRange(total int, index int, maxRows int) (int, int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	if maxRows <= 0 || maxRows >= total {
+		return 0, total
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= total {
+		index = total - 1
+	}
+	start := index - maxRows/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxRows
+	if end > total {
+		end = total
+		start = end - maxRows
+		if start < 0 {
+			start = 0
+		}
+	}
+	return start, end
 }

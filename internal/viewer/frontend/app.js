@@ -1,16 +1,11 @@
-// Global state
 let images = [];
 let currentIndex = 0;
 let zoomLevel = 100;
-let apiBase = '';
 
-// Chapter navigation state
 let chapters = [];
 let currentChapterIndex = 0;
 let currentChapterTitle = '';
 
-// DOM elements
-const mangaImage = document.getElementById('manga-image');
 const loading = document.getElementById('loading');
 const pageInfo = document.getElementById('page-info');
 const pageInput = document.getElementById('page-input');
@@ -20,60 +15,186 @@ const nextBtn = document.getElementById('next-btn');
 const chapterInfo = document.getElementById('chapter-info');
 const prevChapterBtn = document.getElementById('prev-chapter-btn');
 const nextChapterBtn = document.getElementById('next-chapter-btn');
+const container = document.getElementById('viewer-container');
+const column = document.getElementById('manga-column');
 
-// Initialize viewer - called from Wails or manually
-async function initViewer(imageList, startIndex = 0) {
-    images = imageList || [];
-    currentIndex = startIndex || 0;
-    
-    if (images.length === 0) {
-        // Try to load from API
-        try {
-            const response = await fetch('/api/images');
-            const data = await response.json();
-            images = data.images || [];
-            currentIndex = data.start || 0;
-            chapters = data.chapters || [];
-            currentChapterIndex = data.chapterIndex || 0;
-            currentChapterTitle = data.chapterTitle || '';
-        } catch (e) {
-            console.error('Failed to load images:', e);
-        }
-    }
-    
-    if (images.length === 0) {
-        loading.textContent = 'Không có hình ảnh';
+let syncInterval = null;
+let lastSignature = '';
+
+function buildSignature(data) {
+    const imgs = data.images || [];
+    return [
+        imgs.length,
+        data.start || 0,
+        data.chapterIndex || 0,
+        imgs[0] || '',
+        imgs[imgs.length - 1] || ''
+    ].join('|');
+}
+
+async function fetchState() {
+    const response = await fetch('/api/images', { cache: 'no-store' });
+    return response.json();
+}
+
+function updateFromState(data, forceRender = false) {
+    const signature = buildSignature(data);
+    if (!forceRender && signature === lastSignature) {
         return;
     }
-    
-    updatePageInfo();
+
+    lastSignature = signature;
+    images = data.images || [];
+    currentIndex = Math.max(0, Math.min(data.start || 0, images.length - 1));
+    chapters = data.chapters || [];
+    currentChapterIndex = data.chapterIndex || 0;
+    currentChapterTitle = data.chapterTitle || '';
+
+    renderColumn();
     updateChapterInfo();
-    loadImage(currentIndex);
-}
-
-// Load image at specific index
-function loadImage(index) {
-    if (index < 0 || index >= images.length) return;
-    
-    currentIndex = index;
-    loading.style.display = 'block';
-    mangaImage.style.display = 'none';
-    
-    mangaImage.src = images[currentIndex];
     updatePageInfo();
+    scrollToIndex(currentIndex, false);
 }
 
-// Update page info display
+async function initViewer(imageList, startIndex = 0) {
+    if (Array.isArray(imageList) && imageList.length > 0) {
+        updateFromState({ images: imageList, start: startIndex, chapters: [], chapterIndex: 0, chapterTitle: '' }, true);
+    }
+
+    try {
+        const data = await fetchState();
+        updateFromState(data, true);
+    } catch (e) {
+        console.error('Failed to load images:', e);
+        loading.textContent = 'Khong the tai du lieu';
+    }
+
+    if (!syncInterval) {
+        syncInterval = setInterval(async () => {
+            try {
+                const data = await fetchState();
+                updateFromState(data);
+            } catch (_) {
+                // no-op
+            }
+        }, 800);
+    }
+}
+
+function renderColumn() {
+    column.innerHTML = '';
+
+    if (!images || images.length === 0) {
+        loading.style.display = 'block';
+        loading.textContent = 'Khong co hinh anh';
+        return;
+    }
+
+    loading.style.display = 'none';
+
+    images.forEach((src, idx) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'manga-page-wrap';
+
+        const img = document.createElement('img');
+        img.className = 'manga-page';
+        img.src = src;
+        img.alt = `Manga page ${idx + 1}`;
+        img.loading = 'lazy';
+        img.dataset.index = String(idx);
+
+        if (idx === currentIndex) {
+            img.classList.add('active');
+        }
+
+        img.addEventListener('click', () => {
+            currentIndex = idx;
+            highlightActive();
+            updatePageInfo();
+        });
+
+        wrap.appendChild(img);
+        column.appendChild(wrap);
+    });
+
+    applyZoom();
+    preloadAroundCurrent();
+}
+
+function highlightActive() {
+    document.querySelectorAll('.manga-page.active').forEach(el => el.classList.remove('active'));
+    const active = column.querySelector(`.manga-page[data-index="${currentIndex}"]`);
+    if (active) {
+        active.classList.add('active');
+    }
+    preloadAroundCurrent();
+}
+
+function preloadAroundCurrent() {
+    if (!images || images.length === 0) return;
+    const preloadSpan = 3;
+    for (let i = 1; i <= preloadSpan; i++) {
+        const next = currentIndex + i;
+        const prev = currentIndex - i;
+        if (next < images.length) {
+            const img = new Image();
+            img.src = images[next];
+        }
+        if (prev >= 0) {
+            const img = new Image();
+            img.src = images[prev];
+        }
+    }
+}
+
+function updateCurrentIndexByViewport() {
+    const pages = column.querySelectorAll('.manga-page');
+    if (!pages.length) return;
+
+    const viewportTop = container.scrollTop;
+    const viewportCenter = viewportTop + container.clientHeight * 0.35;
+
+    let nearestIdx = currentIndex;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    pages.forEach((img) => {
+        const rectTop = img.offsetTop;
+        const distance = Math.abs(rectTop - viewportCenter);
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestIdx = Number(img.dataset.index || '0');
+        }
+    });
+
+    if (nearestIdx !== currentIndex) {
+        currentIndex = nearestIdx;
+        highlightActive();
+        updatePageInfo();
+    }
+}
+
+function scrollToIndex(index, smooth = true) {
+    if (index < 0 || index >= images.length) return;
+    const target = column.querySelector(`.manga-page[data-index="${index}"]`);
+    if (!target) return;
+    target.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+}
+
 function updatePageInfo() {
+    if (images.length === 0) {
+        pageInfo.textContent = '0 / 0';
+        pageInput.value = 1;
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
+    }
+
     pageInfo.textContent = `${currentIndex + 1} / ${images.length}`;
     pageInput.value = currentIndex + 1;
-    
-    // Update button states
     prevBtn.disabled = currentIndex === 0;
     nextBtn.disabled = currentIndex >= images.length - 1;
 }
 
-// Update chapter info display
 function updateChapterInfo() {
     if (chapters.length > 0 && currentChapterIndex >= 0) {
         chapterInfo.textContent = chapters[currentChapterIndex]?.title || `Chapter ${currentChapterIndex + 1}`;
@@ -86,54 +207,62 @@ function updateChapterInfo() {
     }
 }
 
-// Navigation functions
 function prevPage() {
     if (currentIndex > 0) {
-        loadImage(currentIndex - 1);
+        currentIndex -= 1;
+        highlightActive();
+        updatePageInfo();
+        scrollToIndex(currentIndex);
     }
 }
 
 function nextPage() {
     if (currentIndex < images.length - 1) {
-        loadImage(currentIndex + 1);
+        currentIndex += 1;
+        highlightActive();
+        updatePageInfo();
+        scrollToIndex(currentIndex);
     }
 }
 
 function firstPage() {
-    loadImage(0);
+    currentIndex = 0;
+    highlightActive();
+    updatePageInfo();
+    scrollToIndex(0);
 }
 
 function lastPage() {
-    loadImage(images.length - 1);
+    currentIndex = Math.max(images.length - 1, 0);
+    highlightActive();
+    updatePageInfo();
+    scrollToIndex(currentIndex);
 }
 
 function goToPage(pageNum) {
-    const index = parseInt(pageNum) - 1;
-    if (index >= 0 && index < images.length) {
-        loadImage(index);
-    } else {
+    const idx = Number.parseInt(pageNum, 10) - 1;
+    if (Number.isNaN(idx) || idx < 0 || idx >= images.length) {
         pageInput.value = currentIndex + 1;
+        return;
     }
+    currentIndex = idx;
+    highlightActive();
+    updatePageInfo();
+    scrollToIndex(currentIndex);
 }
 
-// Chapter navigation functions
 function prevChapter() {
     if (currentChapterIndex > 0) {
-        currentChapterIndex--;
-        // Notify backend to load previous chapter
-        notifyChapterChange(currentChapterIndex);
+        notifyChapterChange(currentChapterIndex - 1);
     }
 }
 
 function nextChapter() {
     if (currentChapterIndex < chapters.length - 1) {
-        currentChapterIndex++;
-        // Notify backend to load next chapter
-        notifyChapterChange(currentChapterIndex);
+        notifyChapterChange(currentChapterIndex + 1);
     }
 }
 
-// Notify backend about chapter change
 async function notifyChapterChange(newIndex) {
     try {
         const response = await fetch('/api/chapter', {
@@ -142,31 +271,30 @@ async function notifyChapterChange(newIndex) {
             body: JSON.stringify({ index: newIndex })
         });
         const data = await response.json();
-        
         if (data.images) {
-            images = data.images;
-            currentIndex = 0;
-            currentChapterTitle = data.chapterTitle || '';
-            updatePageInfo();
-            updateChapterInfo();
-            loadImage(0);
+            updateFromState({
+                images: data.images,
+                start: 0,
+                chapters,
+                chapterIndex: newIndex,
+                chapterTitle: data.chapterTitle || ''
+            }, true);
         }
     } catch (e) {
         console.error('Failed to load chapter:', e);
     }
 }
 
-// Zoom functions
 function zoomIn() {
-    if (zoomLevel < 300) {
-        zoomLevel += 25;
+    if (zoomLevel < 180) {
+        zoomLevel += 10;
         applyZoom();
     }
 }
 
 function zoomOut() {
-    if (zoomLevel > 25) {
-        zoomLevel -= 25;
+    if (zoomLevel > 60) {
+        zoomLevel -= 10;
         applyZoom();
     }
 }
@@ -177,23 +305,13 @@ function fitToWindow() {
 }
 
 function applyZoom() {
-    mangaImage.style.transform = `scale(${zoomLevel / 100})`;
+    const scale = zoomLevel / 100;
+    column.style.setProperty('--zoom', String(scale));
     zoomLevelDisplay.textContent = `${zoomLevel}%`;
 }
 
-// Event callbacks
-function imageLoaded() {
-    loading.style.display = 'none';
-    mangaImage.style.display = 'block';
-}
-
-function imageError() {
-    loading.textContent = 'Lỗi tải hình ảnh';
-}
-
-// Keyboard navigation
 document.addEventListener('keydown', (e) => {
-    switch(e.key) {
+    switch (e.key) {
         case 'ArrowLeft':
         case 'a':
             prevPage();
@@ -226,60 +344,31 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Mouse wheel zoom
-document.getElementById('viewer-container').addEventListener('wheel', (e) => {
-    if (e.ctrlKey) {
-        e.preventDefault();
-        if (e.deltaY < 0) {
-            zoomIn();
-        } else {
-            zoomOut();
-        }
-    }
+container.addEventListener('scroll', () => {
+    updateCurrentIndexByViewport();
 });
 
-// Drag to pan
-let isDragging = false;
-let startX, startY, scrollLeft, scrollTop;
-
-const container = document.getElementById('viewer-container');
-
-container.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    startX = e.pageX - container.offsetLeft;
-    startY = e.pageY - container.offsetTop;
-    scrollLeft = container.scrollLeft;
-    scrollTop = container.scrollTop;
-    container.style.cursor = 'grabbing';
-});
-
-container.addEventListener('mouseleave', () => {
-    isDragging = false;
-    container.style.cursor = 'grab';
-});
-
-container.addEventListener('mouseup', () => {
-    isDragging = false;
-    container.style.cursor = 'grab';
-});
-
-container.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
+container.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
     e.preventDefault();
-    const x = e.pageX - container.offsetLeft;
-    const y = e.pageY - container.offsetTop;
-    const walkX = (x - startX) * 1.5;
-    const walkY = (y - startY) * 1.5;
-    container.scrollLeft = scrollLeft - walkX;
-    container.scrollTop = scrollTop - walkY;
-});
+    if (e.deltaY < 0) {
+        zoomIn();
+    } else {
+        zoomOut();
+    }
+}, { passive: false });
 
-// Auto-initialize when page loads
 window.addEventListener('load', () => {
     initViewer();
 });
 
-// Expose functions globally for Wails
+window.addEventListener('beforeunload', () => {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+    }
+});
+
 window.initViewer = initViewer;
 window.prevPage = prevPage;
 window.nextPage = nextPage;

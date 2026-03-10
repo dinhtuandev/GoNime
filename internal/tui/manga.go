@@ -263,7 +263,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = 0
 				m.err = nil
 				m.statusMsg = ""
-			case "m":
+			case "ctrl+m":
 				currentIdx := 0
 				for i, s := range m.sources {
 					if s == m.source {
@@ -310,6 +310,23 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fuzzyResults = nil
 				m.searchQuery = ""
 				m.statusMsg = ""
+			case "ctrl+m":
+				// Đổi nguồn bằng Ctrl+M — không xung đột với gõ text
+				currentIdx := 0
+				for i, s := range m.sources {
+					if s == m.source {
+						currentIdx = i
+						break
+					}
+				}
+				m.source = m.sources[(currentIdx+1)%len(m.sources)]
+				m.scraper = scraper.GetMangaSource(m.source)
+				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.scraper.Name())
+				m.loading = true
+				m.mangaList = nil
+				m.fuzzyResults = nil
+				m.index = 0
+				return m, m.searchManga(m.searchQuery)
 			case "up":
 				if m.index > 0 {
 					m.index--
@@ -800,7 +817,7 @@ func (m MangaModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`s: ` + i18n.T(m.cfg, "hint_search"),
 			i18n.T(m.cfg, "hint_enter_open"),
 			i18n.T(m.cfg, "hint_nav"),
@@ -885,7 +902,7 @@ func (m MangaModel) View() string {
 			"Esc: " + i18n.T(m.cfg, "manga_tab_trending"),
 			i18n.T(m.cfg, "hint_nav"),
 			i18n.T(m.cfg, "hint_enter_select_2"),
-			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
 		b.WriteString("\n")

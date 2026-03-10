@@ -171,7 +171,7 @@ func (c *AnimeClient) GetAllServers(slug string) (*MovieInfo, []EpisodeServer, e
 }
 
 func (c *AnimeClient) Name() string {
-	return "PhimAPI"
+	return "phimapi"
 }
 
 func (c *AnimeClient) GetDetails(slug string) (*MovieInfo, []EpisodeData, error) {

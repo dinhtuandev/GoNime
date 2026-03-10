@@ -101,6 +101,8 @@ type AnimeModel struct {
 	sources       []string
 	posterArt     string // chafa-rendered poster for episodes screen
 	lastPlayTime  time.Time
+	returnScreen  animeScreen
+	returnIndex   int
 }
 
 func NewAnimeModel(parent MainModel) AnimeModel {
@@ -108,13 +110,14 @@ func NewAnimeModel(parent MainModel) AnimeModel {
 	cfg, _ := mgr.LoadConfig()
 	sources := api.GetMovieSourceNames()
 	return AnimeModel{
-		parent:     parent,
-		screen:     animeScreenTrending,
-		cfgManager: mgr,
-		cfg:        cfg,
-		source:     "phimapi",
-		sources:    sources,
-		loading:    true,
+		parent:       parent,
+		screen:       animeScreenTrending,
+		cfgManager:   mgr,
+		cfg:          cfg,
+		source:       "phimapi",
+		sources:      sources,
+		loading:      true,
+		returnScreen: animeScreenTrending,
 	}
 }
 
@@ -122,8 +125,8 @@ func (m AnimeModel) Init() tea.Cmd {
 	return tea.Batch(m.fetchTrending(), tickCmd())
 }
 
-func (m *AnimeModel) getClient() api.MovieSourceWithPage {
-	return api.GetMovieSourceWithPage(m.source)
+func (m *AnimeModel) getClient() api.MovieSource {
+	return api.GetMovieSource(m.source)
 }
 
 func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -231,7 +234,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = 0
 				m.err = nil
 				m.statusMsg = ""
-			case "m":
+			case "ctrl+m":
 				// Cycle through movie sources
 				currentIdx := 0
 				for i, s := range m.sources {
@@ -257,6 +260,8 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.trendingList) > 0 && m.index < len(m.trendingList) {
 					selected := m.trendingList[m.index]
 					m.selectedAnime = &selected
+					m.returnScreen = animeScreenTrending
+					m.returnIndex = m.index
 					m.loading = true
 					m.err = nil
 					return m, m.loadEpisodes(selected.Slug)
@@ -279,8 +284,8 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fuzzyResults = nil
 				m.searchQuery = ""
 				m.statusMsg = ""
-			case "m":
-				// Cycle through movie sources
+			case "ctrl+m":
+				// Đổi nguồn bằng Ctrl+M — không xung đột với gõ text
 				currentIdx := 0
 				for i, s := range m.sources {
 					if s == m.source {
@@ -290,6 +295,11 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.source = m.sources[(currentIdx+1)%len(m.sources)]
 				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.source)
+				m.loading = true
+				m.animeList = nil
+				m.fuzzyResults = nil
+				m.index = 0
+				return m, m.searchAnime(m.searchQuery)
 			case "up":
 				if m.index > 0 {
 					m.index--
@@ -343,6 +353,8 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(displayList) > 0 && m.index < len(displayList) {
 					selected := displayList[m.index]
 					m.selectedAnime = &selected
+					m.returnScreen = animeScreenSearch
+					m.returnIndex = m.index
 					m.loading = true
 					m.err = nil
 					return m, m.loadEpisodes(selected.Slug)
@@ -373,15 +385,16 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
-			m.screen = animeScreenTrending
+			m.screen = m.returnScreen
 			m.selectedAnime = nil
 			m.movie = nil
 			m.servers = nil
 			m.episodeList = nil
-			m.index = 0
+			m.index = m.returnIndex
 			m.err = nil
 			m.statusMsg = ""
-			if len(m.trendingList) == 0 {
+			m.posterArt = ""
+			if m.screen == animeScreenTrending && len(m.trendingList) == 0 {
 				m.loading = true
 				return m, m.fetchTrending()
 			}
@@ -602,8 +615,9 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 			}
 		}
 
-		// Gọi player với args tuỳ biến
-		if err := playWithOptions(p, link, title, subPath, speed); err != nil {
+		// Gọi player với args tuỳ biến + HTTP headers cho CDN
+		referer := api.GetRefererForSource(m.source)
+		if err := playWithOptions(p, link, title, subPath, speed, referer); err != nil {
 			return playAnimeMsg{err: err}
 		}
 		return playAnimeMsg{err: nil}
@@ -775,7 +789,7 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`s: ` + i18n.T(m.cfg, "hint_search"),
 			i18n.T(m.cfg, "hint_enter_open"),
 			i18n.T(m.cfg, "hint_nav"),
@@ -883,11 +897,11 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			"Esc: " + i18n.T(m.cfg, "anime_tab_trending"), // Actually wait, better to use standard hint
+			"Esc: " + i18n.T(m.cfg, "anime_tab_trending"),
 			i18n.T(m.cfg, "hint_nav"),
 			i18n.T(m.cfg, "hint_pgup_dn"),
 			i18n.T(m.cfg, "hint_enter_select_2"),
-			`m: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
 		b.WriteString("\n")

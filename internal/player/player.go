@@ -168,21 +168,19 @@ func (p *Player) PlayWithContext(ctx context.Context, url string, title string) 
 
 	switch baseName {
 	case "mpv":
-		// Cải thiện flags cho Windows
 		cmd = exec.CommandContext(ctx, p.Path,
 			url,
 			"--force-window=yes",
 			"--title="+title,
-			"--no-terminal",
+			"--really-quiet",
 			"--geometry=640x480",
 		)
 	case "vlc":
-		// Cải thiện flags cho Windows
 		cmd = exec.CommandContext(ctx, p.Path,
 			url,
 			"--meta-title="+title,
-			"--qt-start-minimized",
-			"--qt-notification=0",
+			"--no-video-title-show",
+			"--play-and-exit",
 		)
 	default:
 		cmd = exec.CommandContext(ctx, p.Path, url)
@@ -190,6 +188,8 @@ func (p *Player) PlayWithContext(ctx context.Context, url string, title string) 
 
 	cmd.Stdout = nil
 	cmd.Stderr = nil
+	// Detach from the TUI's console so the player can create its own GUI window.
+	setDetachedProcess(cmd)
 	return cmd.Start()
 }
 

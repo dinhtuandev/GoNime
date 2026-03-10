@@ -5,15 +5,23 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/spf13/cobra"
 	"gonime/internal/api"
 	"gonime/internal/config"
 	"gonime/internal/player"
 	"gonime/internal/tui"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
 )
 
-var version = "1.0.0"
+// Build info — injected by ldflags during release builds:
+//
+//	go build -ldflags "-X main.version=v1.2.3 -X main.commit=abc1234 -X main.buildDate=2026-03-08T14:00:00Z"
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
 
 func main() {
 	var rootCmd = &cobra.Command{
@@ -148,11 +156,14 @@ func NewSettingsCommand() *cobra.Command {
 // NewVersionCommand hiển thị version
 func NewVersionCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Hiển thị thông tin phiên bản",
+		Use:     "version",
+		Aliases: []string{"v"},
+		Short:   "Hiển thị thông tin phiên bản",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("GoNime v%s\n", version)
-			fmt.Println("Built with Go | TUI: bubbletea + lipgloss | CLI: cobra")
+			fmt.Printf("GoNime %s\n", version)
+			fmt.Printf("  Commit    : %s\n", commit)
+			fmt.Printf("  Built     : %s\n", buildDate)
+			fmt.Println("  Stack     : Go · bubbletea · lipgloss · cobra")
 		},
 	}
 }

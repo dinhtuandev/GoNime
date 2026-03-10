@@ -12,8 +12,8 @@ import (
 	"gonime/internal/player"
 )
 
-// playWithOptions chạy player với phụ đề & tốc độ nếu có hỗ trợ.
-func playWithOptions(p *player.Player, url, title, subPath string, speed float64) error {
+// playWithOptions chạy player với phụ đề, tốc độ và HTTP headers nếu có hỗ trợ.
+func playWithOptions(p *player.Player, url, title, subPath string, speed float64, referer string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
 	defer cancel()
 
@@ -31,6 +31,12 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 			"--no-terminal",
 			"--geometry=640x480",
 		)
+		// Gửi Referer + User-Agent cho CDN chấp nhận stream
+		if referer != "" {
+			args = append(args,
+				"--http-header-fields=Referer: "+referer+",User-Agent: GoNime/1.0",
+			)
+		}
 		if speed > 0 && speed != 1.0 {
 			args = append(args, fmt.Sprintf("--speed=%g", speed))
 		}
@@ -41,9 +47,14 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 		args = append(args,
 			url,
 			"--meta-title="+title,
-			"--qt-start-minimized",
-			"--qt-notification=0",
+			"--no-video-title-show",
+			"--play-and-exit",
 		)
+		// Gửi Referer + User-Agent cho CDN chấp nhận stream
+		if referer != "" {
+			args = append(args, "--http-referrer="+referer)
+			args = append(args, "--http-user-agent=GoNime/1.0")
+		}
 		if speed > 0 && speed != 1.0 {
 			// VLC dùng rate khoảng 0.25–4.0
 			args = append(args, fmt.Sprintf("--rate=%g", speed))
@@ -58,6 +69,10 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 	cmd := exec.CommandContext(ctx, p.Path, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
+	// Detach the player process so it runs independently of the TUI's terminal.
+	// On Windows this is critical: without DETACHED_PROCESS, mpv installed via
+	// Windows Store / winget may fail to open its GUI window on first launch.
+	setDetachedProcess(cmd)
 	return cmd.Start()
 }
 
@@ -101,4 +116,3 @@ func sanitizeSlug(s string) string {
 	)
 	return replacer.Replace(s)
 }
-

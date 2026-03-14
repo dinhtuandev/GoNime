@@ -14,7 +14,7 @@ type MangaSource interface {
 }
 
 var AllMangaSources = map[string]MangaSource{
-	"otruyen": NewOTruyenScraper("https://otruyen.cc"),
+	"otruyen":  NewOTruyenScraper("https://otruyen.cc"),
 	"truyenvn": NewMangaScraper("https://truyenvn.shop"),
 }
 

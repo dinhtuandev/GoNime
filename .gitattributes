@@ -1,0 +1,7 @@
+# Standardize line endings
+# Force Go files to always use LF (gofmt requirement)
+*.go text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+.gitignore text eol=lf

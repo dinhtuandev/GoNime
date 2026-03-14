@@ -42,11 +42,9 @@ jobs:
       - name: Verify formatting
         shell: bash
         run: |
-          # Only check Go source files tracked by the module (excludes .git, vendor, etc.)
-          unformatted=$(gofmt -l $(go list -f '{{.Dir}}' ./... 2>/dev/null | tr '\n' ' ') 2>/dev/null || gofmt -l .)
-          if [ -n "$unformatted" ]; then
+          if [ -n "$(gofmt -l .)" ]; then
             echo "The following files are not gofmt-formatted:"
-            echo "$unformatted"
+            gofmt -l .
             echo "Run: gofmt -w ."
             exit 1
           fi

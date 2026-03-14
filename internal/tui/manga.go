@@ -310,8 +310,8 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fuzzyResults = nil
 				m.searchQuery = ""
 				m.statusMsg = ""
-			case "ctrl+m":
-				// Đổi nguồn bằng Ctrl+M — không xung đột với gõ text
+			case "ctrl+o":
+				// Đổi nguồn bằng Ctrl+o — không xung đột với gõ text
 				currentIdx := 0
 				for i, s := range m.sources {
 					if s == m.source {
@@ -902,7 +902,7 @@ func (m MangaModel) View() string {
 			"Esc: " + i18n.T(m.cfg, "manga_tab_trending"),
 			i18n.T(m.cfg, "hint_nav"),
 			i18n.T(m.cfg, "hint_enter_select_2"),
-			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+o: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
 		b.WriteString("\n")

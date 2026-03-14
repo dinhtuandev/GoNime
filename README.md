@@ -323,7 +323,7 @@ go run ./cmd/gonime
 Khi gửi PR, vui lòng:
 
 - Giữ code style tương tự project (Go fmt, idiomatic Go).
-- Chạy `go test ./...` trước khi push.
+- Chạy `go test -v ./internal/...` trước khi push.
 - Tránh commit file nhị phân lớn nếu không thực sự cần thiết.
 
 ---

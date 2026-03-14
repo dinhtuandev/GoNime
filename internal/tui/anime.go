@@ -285,7 +285,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchQuery = ""
 				m.statusMsg = ""
 			case "ctrl+o":
-				// Đổi nguồn bằng Ctrl+M — không xung đột với gõ text
+				// Đổi nguồn bằng Ctrl+o — không xung đột với gõ text
 				currentIdx := 0
 				for i, s := range m.sources {
 					if s == m.source {
@@ -811,7 +811,7 @@ func (m AnimeModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+o: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`s: ` + i18n.T(m.cfg, "hint_search"),
 			i18n.T(m.cfg, "hint_enter_open"),
 			i18n.T(m.cfg, "hint_nav"),
@@ -923,7 +923,7 @@ func (m AnimeModel) View() string {
 			i18n.T(m.cfg, "hint_nav"),
 			i18n.T(m.cfg, "hint_pgup_dn"),
 			i18n.T(m.cfg, "hint_enter_select_2"),
-			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+o: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
 		}))
 		b.WriteString("\n")

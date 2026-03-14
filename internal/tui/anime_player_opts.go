@@ -1,21 +1,17 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"gonime/internal/player"
 )
 
 // playWithOptions chạy player với phụ đề, tốc độ và HTTP headers nếu có hỗ trợ.
 func playWithOptions(p *player.Player, url, title, subPath string, speed float64, referer string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Hour)
-	defer cancel()
 
 	baseName := strings.TrimSuffix(filepath.Base(p.Path), ".exe")
 	baseName = strings.ToLower(baseName)
@@ -28,7 +24,7 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 			url,
 			"--force-window=yes",
 			"--title="+title,
-			"--no-terminal",
+			"--really-quiet",
 			"--geometry=640x480",
 		)
 		// Gửi Referer + User-Agent cho CDN chấp nhận stream
@@ -66,7 +62,7 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 		args = append(args, url)
 	}
 
-	cmd := exec.CommandContext(ctx, p.Path, args...)
+	cmd := exec.Command(p.Path, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	// Detach the player process so it runs independently of the TUI's terminal.

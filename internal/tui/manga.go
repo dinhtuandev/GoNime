@@ -263,7 +263,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = 0
 				m.err = nil
 				m.statusMsg = ""
-			case "ctrl+m":
+			case "ctrl+o":
 				currentIdx := 0
 				for i, s := range m.sources {
 					if s == m.source {
@@ -817,7 +817,7 @@ func (m MangaModel) View() string {
 		}
 
 		b.WriteString(drawStatusBar([]string{
-			`Ctrl+M: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+O: ` + i18n.T(m.cfg, "hint_switch_source"),
 			`s: ` + i18n.T(m.cfg, "hint_search"),
 			i18n.T(m.cfg, "hint_enter_open"),
 			i18n.T(m.cfg, "hint_nav"),

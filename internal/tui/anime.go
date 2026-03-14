@@ -234,7 +234,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = 0
 				m.err = nil
 				m.statusMsg = ""
-			case "ctrl+m":
+			case "ctrl+o":
 				// Cycle through movie sources
 				currentIdx := 0
 				for i, s := range m.sources {
@@ -284,7 +284,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fuzzyResults = nil
 				m.searchQuery = ""
 				m.statusMsg = ""
-			case "ctrl+m":
+			case "ctrl+o":
 				// Đổi nguồn bằng Ctrl+M — không xung đột với gõ text
 				currentIdx := 0
 				for i, s := range m.sources {
@@ -345,9 +345,19 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fuzzyResults = nil
 				m.index = 0
 			case "enter":
-				// Ưu tiên fuzzy results nếu có
+				// Nếu có query >= 2 chars VÀ chưa có kết quả API → gọi API
+				hasResults := len(m.animeList) > 0
+				if len([]rune(m.searchQuery)) >= 2 && !hasResults {
+					m.loading = true
+					m.err = nil
+					m.animeList = nil
+					m.fuzzyResults = nil
+					m.index = 0
+					return m, m.searchAnime(m.searchQuery)
+				}
+				// Đã có kết quả → chọn phim
 				displayList := m.animeList
-				if m.searchQuery != "" {
+				if m.searchQuery != "" && len(m.fuzzyResults) > 0 {
 					displayList = m.fuzzyResults
 				}
 				if len(displayList) > 0 && m.index < len(displayList) {
@@ -359,6 +369,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = nil
 					return m, m.loadEpisodes(selected.Slug)
 				}
+				// Nếu query >= 2 chars nhưng fuzzy filter lọc hết → re-search API
 				if len([]rune(m.searchQuery)) >= 2 {
 					m.loading = true
 					m.err = nil
@@ -372,9 +383,11 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(runes) == 1 && !m.loading {
 					m.searchQuery += key
 					m.statusMsg = ""
-					// Cập nhật fuzzy filter real-time khi gõ thêm ký tự
-					m.fuzzyResults = applyAnimeFuzzy(m.animeList, m.searchQuery)
-					m.index = 0
+					// Chỉ fuzzy filter khi ĐÃ CÓ data từ API
+					if len(m.animeList) > 0 {
+						m.fuzzyResults = applyAnimeFuzzy(m.animeList, m.searchQuery)
+						m.index = 0
+					}
 				}
 			}
 			return m, nil
@@ -541,11 +554,20 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 
 		ep := m.episodeList[epIdx]
 		link := ep.LinkM3U8
+		isEmbedOnly := false
 		if link == "" {
 			link = ep.LinkEmbed
+			isEmbedOnly = true
 		}
 		if link == "" {
 			return playAnimeMsg{err: fmt.Errorf("không tìm thấy link phát cho tập này")}
+		}
+
+		// Embed links (không phải .m3u8/.mp4) không chạy được trên MPV/VLC
+		// → mở bằng trình duyệt
+		if isEmbedOnly && !isDirectStreamURL(link) {
+			_ = player.PlayWithBrowser(link)
+			return playAnimeMsg{err: nil}
 		}
 
 		// Lưu lịch sử trước
@@ -1156,4 +1178,17 @@ func applyAnimeFuzzy(items []api.AnimeItem, query string) []api.AnimeItem {
 		result = append(result, items[r.Index])
 	}
 	return result
+}
+
+// isDirectStreamURL kiểm tra URL có phải link stream trực tiếp (m3u8, mp4, mkv...)
+// hay chỉ là URL embed (trang web).
+func isDirectStreamURL(url string) bool {
+	lower := strings.ToLower(url)
+	streamExts := []string{".m3u8", ".mp4", ".mkv", ".avi", ".webm", ".ts"}
+	for _, ext := range streamExts {
+		if strings.Contains(lower, ext) {
+			return true
+		}
+	}
+	return false
 }

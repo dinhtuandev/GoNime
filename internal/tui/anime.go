@@ -554,18 +554,17 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 
 		ep := m.episodeList[epIdx]
 		link := ep.LinkM3U8
-		isEmbedOnly := false
 		if link == "" {
 			link = ep.LinkEmbed
-			isEmbedOnly = true
 		}
 		if link == "" {
 			return playAnimeMsg{err: fmt.Errorf("không tìm thấy link phát cho tập này")}
 		}
 
-		// Embed links (không phải .m3u8/.mp4) không chạy được trên MPV/VLC
-		// → mở bằng trình duyệt
-		if isEmbedOnly && !isDirectStreamURL(link) {
+		// Embed links không chạy trực tiếp được trên MPV/VLC → mở bằng trình duyệt
+		// Ngoại lệ: nếu link embed chứa URL stream trực tiếp (như many embed player trả về m3u8)
+		isDirect := isDirectStreamURL(link)
+		if !isDirect {
 			_ = player.PlayWithBrowser(link)
 			return playAnimeMsg{err: nil}
 		}
@@ -603,15 +602,15 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 		}
 
 		var p *player.Player
-		var err error
+		var playerErr error
 		if playerName != "" {
-			p, err = player.NewPlayer(playerName)
+			p, playerErr = player.NewPlayer(playerName)
 		}
-		if p == nil || err != nil {
-			p, err = player.FindAnyPlayer()
+		if p == nil || playerErr != nil {
+			p, playerErr = player.FindAnyPlayer()
 		}
 
-		if p == nil || err != nil {
+		if p == nil || playerErr != nil {
 			// Fallback: mở bằng trình duyệt
 			browserErr := player.PlayWithBrowser(link)
 			if browserErr != nil {
@@ -640,7 +639,12 @@ func (m AnimeModel) playEpisode(epIdx int) tea.Cmd {
 		// Gọi player với args tuỳ biến + HTTP headers cho CDN
 		referer := api.GetRefererForSource(m.source)
 		if err := playWithOptions(p, link, title, subPath, speed, referer); err != nil {
-			return playAnimeMsg{err: err}
+			// Nếu player thất bại, thử mở bằng trình duyệt
+			browserErr := player.PlayWithBrowser(link)
+			if browserErr != nil {
+				return playAnimeMsg{err: fmt.Errorf("lỗi phát video: %v (và không mở được trình duyệt: %v)", err, browserErr)}
+			}
+			return playAnimeMsg{err: fmt.Errorf("lỗi phát video bằng %s, đã mở bằng trình duyệt: %v", p.Name, err)}
 		}
 		return playAnimeMsg{err: nil}
 	}
@@ -1187,6 +1191,24 @@ func isDirectStreamURL(url string) bool {
 	streamExts := []string{".m3u8", ".mp4", ".mkv", ".avi", ".webm", ".ts"}
 	for _, ext := range streamExts {
 		if strings.Contains(lower, ext) {
+			return true
+		}
+	}
+	// Nhiều CDN trả về URL không có extension nhưng vẫn là stream
+	// Kiểm tra các pattern phổ biến của stream server
+	streamPatterns := []string{
+		"/playlist.m3u8",
+		"/master.m3u8",
+		"/index.m3u8",
+		"/stream/",
+		"/hls/",
+		"/dash/",
+		".m3u8?",
+		"cdn-",
+		"stream.m3u8",
+	}
+	for _, pattern := range streamPatterns {
+		if strings.Contains(lower, pattern) {
 			return true
 		}
 	}

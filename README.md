@@ -15,6 +15,43 @@
     ╚═════╝   ╚═════╝  ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝ ╚══════╝
 ```
 
+## 🖼️ Screenshots
+
+### Main Menu
+<p align="center">
+  <img src="./screenshots/menu.png" alt="GoNime Main Menu" width="600">
+  <br>
+  <em>Main menu with anime, manga, history, favorites, and settings options</em>
+</p>
+
+### Anime/Movie Interface
+<p align="center">
+  <img src="./screenshots/anime_movie_detail.png" alt="GoNime Anime Movie Detail" width="600">
+  <br>
+  <em>Anime/movie detail screen with poster, metadata, and episode list</em>
+</p>
+
+### Manga Reading
+<p align="center">
+  <img src="./screenshots/manga_detail.png" alt="GoNime Manga Detail" width="600">
+  <br>
+  <em>Manga reading interface with chapter navigation and image rendering</em>
+</p>
+
+### Video Playback
+<p align="center">
+  <img src="./screenshots/openvideo.png" alt="GoNime Video Playback" width="600">
+  <br>
+  <em>Video playback using MPV/VLC with automatic fallback to browser</em>
+</p>
+
+### Search & History
+<p align="center">
+  <img src="./screenshots/search_anime_movie.png" alt="GoNime Search Interface" width="600">
+  <br>
+  <em>Fuzzy search functionality with real-time filtering</em>
+</p>
+
 ---
 
 ## ✨ Tính năng chính
@@ -290,7 +327,7 @@ gonime/
 
 ## 🗺 Roadmap
 
-- [x] TUI chính với BubbleTea.
+- [x] TUI chính với BubbleTea.  g
 - [x] Tìm kiếm & phát anime (PhimAPI).
 - [x] Multiple movie sources (PhimAPI, OPhim, NguonC).
 - [x] Đọc manga với chafa rendering.

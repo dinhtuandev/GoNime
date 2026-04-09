@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +28,6 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 			"--really-quiet",
 			"--geometry=640x480",
 		)
-		// Gửi Referer + User-Agent cho CDN chấp nhận stream
 		if referer != "" {
 			args = append(args,
 				"--http-header-fields=Referer: "+referer+",User-Agent: GoNime/1.0",
@@ -40,19 +40,25 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 			args = append(args, "--sub-file="+subPath)
 		}
 	case "vlc":
-		args = append(args,
-			url,
-			"--meta-title="+title,
-			"--no-video-title-show",
-			"--play-and-exit",
-		)
-		// Gửi Referer + User-Agent cho CDN chấp nhận stream
+		args = append(args, url)
+		// VLC metadata
+		args = append(args, "--meta-title="+title)
+		args = append(args, "--no-video-title-show")
+		args = append(args, "--play-and-exit")
+		// Network caching để tránh buffering
+		args = append(args, "--network-caching=5000")
+		// HTTP headers - VLC không hỗ trợ tốt cho m3u8, thử nhiều cách
 		if referer != "" {
 			args = append(args, "--http-referrer="+referer)
-			args = append(args, "--http-user-agent=GoNime/1.0")
 		}
+		// User-Agent cần thiết cho một số CDN
+		args = append(args, "--http-user-agent=GoNime/1.0")
+		// Thêm options để VLC xử lý tốt hơn streaming
+		args = append(args, "--file-caching=3000")
+		args = append(args, "--live-caching=3000")
+		// Disable deinterlace cho m3u8 streams
+		args = append(args, "--deinterlace=auto")
 		if speed > 0 && speed != 1.0 {
-			// VLC dùng rate khoảng 0.25–4.0
 			args = append(args, fmt.Sprintf("--rate=%g", speed))
 		}
 		if subPath != "" {
@@ -62,14 +68,21 @@ func playWithOptions(p *player.Player, url, title, subPath string, speed float64
 		args = append(args, url)
 	}
 
+	log.Printf("[player] Starting %s with args: %v", baseName, args)
+
 	cmd := exec.Command(p.Path, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	// Detach the player process so it runs independently of the TUI's terminal.
-	// On Windows this is critical: without DETACHED_PROCESS, mpv installed via
-	// Windows Store / winget may fail to open its GUI window on first launch.
 	setDetachedProcess(cmd)
-	return cmd.Start()
+
+	err := cmd.Start()
+	if err != nil {
+		log.Printf("[player] Failed to start %s: %v", baseName, err)
+		return fmt.Errorf("không thể khởi động %s: %v", baseName, err)
+	}
+
+	log.Printf("[player] Successfully started %s", baseName)
+	return nil
 }
 
 // findLocalSubtitle tìm phụ đề .srt/.ass trong subtitlesDir dựa trên slug + tên tập.

@@ -5,8 +5,8 @@ Mục tiêu
 - Đảm bảo hiệu năng cao, dễ bảo trì và có thể mở rộng với TUI (Bubble Tea) và scraper/API modular.
 
 ## 1. Kiến trúc hệ thống (High-level)
-- Client API: giao tiếp với phimapi.com (HTTP, JSON) để tìm kiếm và lấy chi tiết anime.
-- Scraper Manga: thu thập danh sách truyện, danh sách chapter và ảnh từ truyenvn.shop bằng net/http và goquery.
+- Client API: giao tiếp với vsmov.com, phimapi.com và phim.nguonc.com (HTTP, JSON) để tìm kiếm và lấy chi tiết anime.
+- Scraper Manga: dùng MangaDex API (JSON) để lấy danh sách truyện, chapter và ảnh chapter.
 - TUI (Bubble Tea): giao diện người dùng dựa trên terminal với các mô hình riêng cho từng phần (Main menu, Anime, Manga, History, Favorites, Settings).
 - Player & Downloader: phát video (mpv/vlc) và tải video bằng yt-dlp; hỗ trợ tải ảnh manga và quản lý tiến trình tải.
 - Cấu hình: lưu trữ cấu hình người dùng và lịch sử ở thư mục cấu hình người dùng.
@@ -29,7 +29,7 @@ Mục tiêu
 Phase 1 — Thiết lập và scaffolding
 - Khởi tạo module Go và thiết kế cấu trúc thư mục:
   - cmd/gonime: entrypoint cho executable
-  - internal/api/: client API cho phimapi.com
+  - internal/api/: client API cho vsmov.com, phimapi.com, phim.nguonc.com
   - internal/scraper/: scraper cho manga
   - internal/tui/: model và view cho Bubble Tea
   - internal/config/: quản lý config, history, favorites

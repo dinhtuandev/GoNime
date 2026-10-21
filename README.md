@@ -58,8 +58,8 @@
 
 | **Tính năng** | **Chi tiết** |
 | ------------- | ------------ |
-| 🎬 **Xem Phim/Anime** | Tìm kiếm & phát từ 3 nguồn: **PhimAPI**, **OPhim**, **NguonC** (có hỗ trợ TMDB ID từ PhimAPI). |
-| 📚 **Đọc Manga** | Tìm kiếm & đọc từ **TruyenVN** và **OTruyen** (HTML + API CDN chapter). |
+| 🎬 **Xem Phim/Anime** | Tìm kiếm & phát từ 3 nguồn: **VSMOV**, **PhimAPI**, **NguonC** (có hỗ trợ TMDB ID từ PhimAPI). |
+| 📚 **Đọc Manga** | Tìm kiếm & đọc từ **MangaDex** (API JSON, lọc bản dịch tiếng Việt). |
 | 🖼 **Thumbnail trong TUI** | Dùng **chafa** để hiển thị poster/thumbnail cho Episodes/Chapters, History, Favorites. |
 | 📖 **Manga Viewer riêng** | Mở manga trong cửa sổ riêng (Wails + frontend web). |
 | 🔖 **Chapter / Episode Navigation** | Chuyển chapter/tập bằng phím tắt (n/p, g/G, PgUp/Dn, …). |
@@ -151,7 +151,7 @@ gonime settings
 
 | **Phím** | **Tác dụng** |
 | -------- | ------------ |
-| `m` | Đổi nguồn phim (`phimapi` → `ophim` → `nguonc`). |
+| `Ctrl+O` | Đổi nguồn phim (`vsmov` → `phimapi` → `nguonc`). |
 | `s` | Chuyển sang màn hình tìm kiếm. |
 | Gõ ký tự | Nhập tên phim/anime trong ô search. |
 | `Enter` | Tìm kiếm (khi đang nhập) / Chọn phim / Vào màn tập. |
@@ -182,7 +182,7 @@ gonime settings
 
 | **Phím** | **Tác dụng** |
 | -------- | ------------ |
-| `m` | Đổi nguồn manga (`otruyen` ↔ `truyenvn`). |
+| `Ctrl+O` | Đổi nguồn manga (hiện chỉ có `mangadex`). |
 | `s` | Chuyển sang màn hình tìm kiếm manga. |
 | Gõ ký tự | Nhập tên manga. |
 | `Enter` | Tìm kiếm / Chọn manga / Vào màn Chapters. |
@@ -221,18 +221,18 @@ Ví dụ màn Anime Trending:
 
 ```
 ╔═══════════════════════════════════════════════════════════════╗
-║  🎬 ANIME / MOVIE                  [phimapi]   [🔥 Xu hướng]  ║
+║  🎬 ANIME / MOVIE                  [vsmov]   [🔥 Xu hướng]    ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  ▶ Vạt Áo Đồng Phục                            (2026)        ║
 ║    Siêu Nhân Điện Quang Geed                   (2017)        ║
 ║    Trót Yêu Quý Cô Lạnh Lùng                   (2026)        ║
 ║    ...                                                         ║
 ║                                                               ║
-║  m: Đổi nguồn │ s: Tìm kiếm │ Enter: Xem │ ↑↓/jk: Di chuyển  ║
+║  Ctrl+O: Nguồn │ s: Tìm kiếm │ Enter: Xem │ ↑↓: Di chuyển    ║
 ╚═══════════════════════════════════════════════════════════════╝
 ```
 
-Màn Episodes, Chapters, History, Favorites đều có **poster panel bên phải** khi có thumbnail (từ PhimAPI/OPhim/NguonC/OTruyen/TruyenVN).
+Màn Episodes, Chapters, History, Favorites đều có **poster panel bên phải** khi có thumbnail (từ VSMOV/PhimAPI/NguonC/MangaDex).
 
 ---
 
@@ -251,7 +251,7 @@ Ví dụ:
   "download_dir": "C:/Users/you/Downloads/gonime",
   "manga_image_dir": "C:/Users/you/Downloads/gonime/manga",
   "manga_image_size": 100,
-  "manga_url": "https://truyenvn.shop"
+  "manga_url": "https://mangadex.org"
 }
 ```
 
@@ -259,7 +259,7 @@ Ví dụ:
 - **download_dir**: thư mục để yt-dlp tải video.
 - **manga_image_dir**: thư mục cache ảnh manga (cho chafa/viewer).
 - **manga_image_size**: kích thước ảnh manga (50–200).
-- **manga_url**: URL mặc định cho scraper TruyenVN (vẫn dùng nội bộ, nhưng nguồn chính đang là `otruyen`).
+- **manga_url**: URL nguồn truyện, dùng cho link "mở trong trình duyệt" (`https://mangadex.org`).
 
 ---
 
@@ -267,18 +267,17 @@ Ví dụ:
 
 ### Phim/Anime
 
-| **Nguồn** | **Loại** | **Mô tả** |
+| Nguồn | Loại | Mô tả |
 | --------- | -------- | --------- |
-| [`phimapi.com`](https://phimapi.com) | Anime/Phim | API chính; dùng `/v1/api/tim-kiem`, `/phim/{slug}`, `/danh-sach/phim-moi-cap-nhat`, `/tmdb/{type}/{id}`. |
-| [`ophim.cc`](https://ophim.cc) | Phim | API dự phòng qua `OPhimClient`. |
-| [`phim.nguonc.com`](https://phim.nguonc.com) | Phim | Scraper HTML qua `NguonCScraper`. |
+| [`vsmov.com`](https://vsmov.com) | Anime/Phim | Nguồn chính; API `/danh-sach/{type}`, `/tim-kiem`, `/phim/{slug}` (lấy từ CineSync). Tập phim là embed `streamvsmov`. |
+| [`phimapi.com`](https://phimapi.com) | Anime/Phim | API dự phòng; dùng `/v1/api/tim-kiem`, `/phim/{slug}`, `/danh-sach/phim-moi-cap-nhat`, `/tmdb/{type}/{id}`. |
+| [`phim.nguonc.com`](https://phim.nguonc.com) | Phim | API JSON qua `NguonCScraper`. |
 
 ### Manga
 
 | **Nguồn** | **Loại** | **Mô tả** |
 | --------- | -------- | --------- |
-| [`truyenvn.shop`](https://truyenvn.shop) | Manga | Scraper HTML (Madara theme) — `MangaScraper`. |
-| [`otruyen.cc`](https://otruyen.cc) | Manga | Scraper HTML + CDN chapter API (`sv*.otruyencdn.com/v1/api/chapter/...`) — `OTruyenScraper`. |
+| [`api.mangadex.org`](https://api.mangadex.org) | Manga | API JSON — `MangaDexScraper`: trending, search (`availableTranslatedLanguage=vi`), feed chapter và ảnh qua `at-home/server`. |
 
 ---
 
@@ -292,8 +291,8 @@ gonime/
 ├── internal/
 │   ├── api/
 │   │   ├── client.go            # PhimAPI client (search, episodes, TMDB, trending)
-│   │   ├── ophim.go             # OPhim client
-│   │   ├── nguonc.go            # NguonC scraper
+│   │   ├── vsmov.go             # VSMOV client (nguồn chính)
+│   │   ├── nguonc.go            # NguonC client
 │   │   └── movie.go             # Movie source interfaces + registry
 │   ├── config/
 │   │   └── config.go            # Config, history, favorites (+ defaults)
@@ -302,8 +301,7 @@ gonime/
 │   ├── render/
 │   │   └── chafa.go             # Chafa-based image renderer & cache
 │   ├── scraper/
-│   │   ├── manga.go             # TruyenVN scraper
-│   │   ├── otruyen.go           # OTruyen scraper (HTML + chapter CDN)
+│   │   ├── mangadex.go          # MangaDex API scraper
 │   │   └── sources.go           # MangaSource interface + registry
 │   ├── viewer/
 │   │   ├── viewer.go            # Viewer abstraction
@@ -329,9 +327,9 @@ gonime/
 
 - [x] TUI chính với BubbleTea.  g
 - [x] Tìm kiếm & phát anime (PhimAPI).
-- [x] Multiple movie sources (PhimAPI, OPhim, NguonC).
+- [x] Multiple movie sources (VSMOV, PhimAPI, NguonC).
 - [x] Đọc manga với chafa rendering.
-- [x] Multiple manga sources (TruyenVN, OTruyen).
+- [x] MangaDex API (thay cho các nguồn HTML đã chết).
 - [x] Wails full manga viewer.
 - [x] Chapter navigation trong viewer + TUI.
 - [x] Thumbnail rendering trong CLI (episodes, chapters, history, favorites).

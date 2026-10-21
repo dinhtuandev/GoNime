@@ -11,20 +11,20 @@ type MovieSource interface {
 }
 
 var allMovieSources = map[string]MovieSource{
+	"vsmov":   NewVSMOVClient(),
 	"phimapi": NewAnimeClient(),
-	"ophim":   NewOPhimClient(),
 	"nguonc":  NewNguonCScraper(),
 }
 
 func GetMovieSourceNames() []string {
-	return []string{"phimapi", "ophim", "nguonc"}
+	return []string{"vsmov", "phimapi", "nguonc"}
 }
 
 func GetMovieSource(name string) MovieSource {
 	if s, ok := allMovieSources[name]; ok {
 		return s
 	}
-	return allMovieSources["phimapi"]
+	return allMovieSources["vsmov"]
 }
 
 // GetRefererForSource trả về Referer phù hợp cho CDN của từng nguồn phim.
@@ -33,8 +33,8 @@ func GetRefererForSource(name string) string {
 	switch name {
 	case "nguonc":
 		return "https://phim.nguonc.com/"
-	case "ophim":
-		return "https://ophim1.com/"
+	case "vsmov":
+		return "https://vsmov.com/"
 	case "phimapi":
 		return "https://phimapi.com/"
 	default:

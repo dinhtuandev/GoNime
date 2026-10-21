@@ -275,7 +275,6 @@ func (r *ChafaRenderer) downloadWithCache(ctx context.Context, imageURL string) 
 		return "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	req.Header.Set("Referer", "https://truyenvn.shop/")
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)

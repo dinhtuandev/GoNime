@@ -170,7 +170,7 @@ func (m *Manager) getDefaultConfig() *Config {
 		DownloadDir:    downloadDir,
 		MangaImageDir:  filepath.Join(downloadDir, "manga"),
 		MangaImageSize: 100,
-		MangaURL:       "https://truyenvn.shop",
+		MangaURL:       "https://mangadex.org",
 		ImageMode:      "auto",
 		SubtitlesDir:   filepath.Join(downloadDir, "subs"),
 		PlaybackSpeed:  1.0,

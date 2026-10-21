@@ -118,7 +118,7 @@ func NewAnimeModel(parent MainModel) AnimeModel {
 		screen:       animeScreenTrending,
 		cfgManager:   mgr,
 		cfg:          cfg,
-		source:       "phimapi",
+		source:       "vsmov",
 		sources:      sources,
 		loading:      true,
 		returnScreen: animeScreenTrending,

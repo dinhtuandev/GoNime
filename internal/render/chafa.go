@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// maxCachedImageSize giới hạn dung lượng ảnh tải về cache.
+const maxCachedImageSize = 50 * 1024 * 1024
+
 // ChafaRenderer download ảnh và render ra terminal bằng chafa
 type ChafaRenderer struct {
 	chafaPath string // đường dẫn tới chafa.exe
@@ -274,7 +277,8 @@ func (r *ChafaRenderer) downloadWithCache(ctx context.Context, imageURL string) 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	req.Header.Set("Referer", "https://truyenvn.shop/")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -283,6 +287,9 @@ func (r *ChafaRenderer) downloadWithCache(ctx context.Context, imageURL string) 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+	if resp.ContentLength > maxCachedImageSize {
+		return "", fmt.Errorf("ảnh quá lớn: %d bytes (tối đa: %d)", resp.ContentLength, maxCachedImageSize)
+	}
 
 	f, err := os.Create(cachePath)
 	if err != nil {
@@ -290,7 +297,7 @@ func (r *ChafaRenderer) downloadWithCache(ctx context.Context, imageURL string) 
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxCachedImageSize)); err != nil {
 		os.Remove(cachePath)
 		return "", err
 	}

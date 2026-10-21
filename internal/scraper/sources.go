@@ -19,12 +19,12 @@ var AllMangaSources = map[string]MangaSource{
 }
 
 func GetMangaSourceNames() []string {
-	return []string{"otruyen", "truyenvn"}
+	return []string{"truyenvn", "otruyen"}
 }
 
 func GetMangaSource(name string) MangaSource {
 	if s, ok := AllMangaSources[name]; ok {
 		return s
 	}
-	return AllMangaSources["otruyen"]
+	return AllMangaSources["truyenvn"]
 }

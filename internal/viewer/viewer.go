@@ -2,12 +2,16 @@ package viewer
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 )
+
+//go:embed frontend
+var frontendFS embed.FS
 
 // OpenPayload defines payload format for viewer Open API
 type OpenPayload struct {

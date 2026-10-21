@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -64,6 +65,10 @@ func (c *OPhimClient) GetTrending(page int) ([]AnimeItem, string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", errors.New("ophim trending: HTTP " + resp.Status)
+	}
+
 	var result ophimListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, "", err
@@ -94,6 +99,10 @@ func (c *OPhimClient) Search(query string) ([]AnimeItem, string, error) {
 		return nil, "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", errors.New("ophim search: HTTP " + resp.Status)
+	}
 
 	var result ophimListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -150,6 +159,10 @@ func (c *OPhimClient) GetDetails(slug string) (*MovieInfo, []EpisodeData, error)
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, errors.New("ophim detail: HTTP " + resp.Status)
+	}
 
 	var result ophimDetailResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

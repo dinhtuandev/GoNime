@@ -195,9 +195,11 @@ func (p *Player) PlayWithContext(ctx context.Context, url string, title string) 
 
 // PlayWithBrowser mở URL bằng trình duyệt mặc định (fallback cuối)
 func PlayWithBrowser(url string) error {
+	// No shell involved: avoids cmd.exe metacharacter injection from
+	// URLs supplied by third-party APIs.
 	switch runtime.GOOS {
 	case "windows":
-		return exec.Command("cmd", "/c", "start", "", url).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 	case "darwin":
 		return exec.Command("open", url).Start()
 	default:

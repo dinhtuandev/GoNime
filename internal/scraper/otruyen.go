@@ -299,6 +299,10 @@ func (s *OTruyenScraper) DownloadImage(ctx context.Context, imageURL string, des
 		return "", err
 	}
 
+	if resp.ContentLength > maxImageSize {
+		return "", fmt.Errorf("image too large: %d bytes (max: %d)", resp.ContentLength, maxImageSize)
+	}
+
 	filename := filepath.Base(imageURL)
 	if ext := filepath.Ext(filename); ext == "" {
 		filename += ".jpg"
@@ -313,7 +317,7 @@ func (s *OTruyenScraper) DownloadImage(ctx context.Context, imageURL string, des
 	}
 	defer out.Close()
 
-	_, err = out.ReadFrom(resp.Body)
+	_, err = io.Copy(out, io.LimitReader(resp.Body, maxImageSize))
 	return destPath, err
 }
 

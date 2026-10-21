@@ -104,7 +104,9 @@ func NewManager() (*Manager, error) {
 	}
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return nil, err
+		// Return the manager anyway: paths stay usable for defaults and the
+		// callers that ignore the error must not dereference nil.
+		return m, err
 	}
 
 	return m, nil

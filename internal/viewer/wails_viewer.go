@@ -1,16 +1,16 @@
 package viewer
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
+	"sync"
+	"time"
 )
 
 // WailsViewerReal is a real Wails-based viewer integration (Phase 3)
@@ -26,6 +26,10 @@ type WailsViewerReal struct {
 	scraper             interface {
 		GetChapterImages(url string) ([]string, error)
 	}
+
+	// mu guards all mutable viewer state; HTTP handlers run on their own
+	// goroutines while the TUI mutates the same fields.
+	mu sync.Mutex
 }
 
 // ChapterInfo represents a manga chapter
@@ -36,24 +40,21 @@ type ChapterInfo struct {
 
 // Open starts the viewer with the given images and opens it in the default browser
 func (w *WailsViewerReal) Open(images []string, start int) error {
+	w.mu.Lock()
 	w.images = images
 	w.start = start
+	started := w.started
+	w.mu.Unlock()
 
-	openedNow := false
-	if !w.started {
+	if !started {
 		if err := w.startServer(); err != nil {
 			return fmt.Errorf("failed to start viewer server: %v", err)
 		}
+		w.mu.Lock()
 		w.started = true
-		openedNow = true
-	}
-
-	// Update the viewer with new images
-	w.updateViewer()
-
-	// Open browser only on first run. The frontend polls /api/images for updates.
-	if openedNow {
-		url := fmt.Sprintf("http://localhost:%d", w.serverPort)
+		port := w.serverPort
+		w.mu.Unlock()
+		url := fmt.Sprintf("http://127.0.0.1:%d", port)
 		log.Printf("[viewer-wails] Opening viewer at %s", url)
 		if err := w.openBrowser(url); err != nil {
 			log.Printf("[viewer-wails] Warning: could not open browser: %v", err)
@@ -65,40 +66,38 @@ func (w *WailsViewerReal) Open(images []string, start int) error {
 
 // startServer starts the HTTP server to serve the viewer frontend
 func (w *WailsViewerReal) startServer() error {
-	// Find available port
+	// Bind synchronously so the port is live before Open returns.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("failed to find available port: %v", err)
 	}
-	w.serverPort = ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
 
-	// Get the directory where the executable is located
-	frontendDir := w.getFrontendDir()
-
-	mux := http.NewServeMux()
-
-	// Serve static files from frontend directory
-	fs := http.FileServer(http.Dir(frontendDir))
-	mux.Handle("/", fs)
-
-	// API endpoint to get current images
-	mux.HandleFunc("/api/images", w.handleImages)
-
-	// API endpoint to update viewer
-	mux.HandleFunc("/api/update", w.handleUpdate)
-
-	// API endpoint to change chapter
-	mux.HandleFunc("/api/chapter", w.handleChapterChange)
-
-	w.server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", w.serverPort),
-		Handler: mux,
+	sub, err := fs.Sub(frontendFS, "frontend")
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("failed to load embedded frontend: %v", err)
 	}
 
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.FS(sub)))
+	mux.HandleFunc("/api/images", w.handleImages)
+	mux.HandleFunc("/api/update", w.handleUpdate)
+	mux.HandleFunc("/api/chapter", w.handleChapterChange)
+
+	w.mu.Lock()
+	w.serverPort = port
+	srv := &http.Server{
+		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	w.server = srv
+	w.mu.Unlock()
+
 	go func() {
-		log.Printf("[viewer-wails] Server starting on port %d", w.serverPort)
-		if err := w.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("[viewer-wails] Server starting on port %d", port)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("[viewer-wails] Server error: %v", err)
 		}
 	}()
@@ -106,42 +105,27 @@ func (w *WailsViewerReal) startServer() error {
 	return nil
 }
 
-// getFrontendDir returns the directory containing the frontend files
-func (w *WailsViewerReal) getFrontendDir() string {
-	// Try multiple locations for the frontend directory
-	possibleDirs := []string{
-		// Current directory (when running from project root)
-		"internal/viewer/frontend",
-		// Relative to executable (production)
-		filepath.Join(filepath.Dir(os.Args[0]), "internal/viewer/frontend"),
-		// Absolute path from source
-		"D:\\WorkingSpace\\gonime\\internal\\viewer\\frontend",
-	}
-
-	for _, dir := range possibleDirs {
-		if _, err := os.Stat(dir); err == nil {
-			return dir
-		}
-	}
-
-	// Fallback to current working directory
-	return "internal/viewer/frontend"
-}
-
 // handleImages returns the current images as JSON
 func (w *WailsViewerReal) handleImages(wr http.ResponseWriter, req *http.Request) {
 	wr.Header().Set("Content-Type", "application/json")
 
+	w.mu.Lock()
+	images := w.images
+	start := w.start
+	chapters := w.chapters
+	chapterIndex := w.currentChapterIndex
+	w.mu.Unlock()
+
 	chapterTitle := ""
-	if w.currentChapterIndex >= 0 && w.currentChapterIndex < len(w.chapters) {
-		chapterTitle = w.chapters[w.currentChapterIndex].Title
+	if chapterIndex >= 0 && chapterIndex < len(chapters) {
+		chapterTitle = chapters[chapterIndex].Title
 	}
 
 	json.NewEncoder(wr).Encode(map[string]interface{}{
-		"images":       w.images,
-		"start":        w.start,
-		"chapters":     w.chapters,
-		"chapterIndex": w.currentChapterIndex,
+		"images":       images,
+		"start":        start,
+		"chapters":     chapters,
+		"chapterIndex": chapterIndex,
 		"chapterTitle": chapterTitle,
 	})
 }
@@ -163,36 +147,41 @@ func (w *WailsViewerReal) handleChapterChange(wr http.ResponseWriter, req *http.
 		return
 	}
 
-	// Validate chapter index
+	w.mu.Lock()
 	if data.Index < 0 || data.Index >= len(w.chapters) {
+		w.mu.Unlock()
 		wr.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(wr).Encode(map[string]string{"error": "invalid chapter index"})
 		return
 	}
-
-	// Get images for the new chapter
-	w.currentChapterIndex = data.Index
+	title := w.chapters[data.Index].Title
 	chapterURL := w.chapters[data.Index].URL
+	w.currentChapterIndex = data.Index
+	scraper := w.scraper
+	w.mu.Unlock()
 
 	var images []string
-	var err error
-
-	// Try to get images from scraper if available
-	if w.scraper != nil {
-		images, err = w.scraper.GetChapterImages(chapterURL)
+	if scraper != nil {
+		var err error
+		images, err = scraper.GetChapterImages(chapterURL)
 		if err != nil {
 			log.Printf("[viewer-wails] Failed to get chapter images: %v", err)
 		}
 	}
+	if images == nil {
+		images = []string{}
+	}
 
+	w.mu.Lock()
 	w.images = images
 	w.start = 0
+	w.mu.Unlock()
 
 	wr.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(wr).Encode(map[string]interface{}{
-		"images":       w.images,
-		"start":        w.start,
-		"chapterTitle": w.chapters[data.Index].Title,
+		"images":       images,
+		"start":        0,
+		"chapterTitle": title,
 	})
 }
 
@@ -214,26 +203,13 @@ func (w *WailsViewerReal) handleUpdate(wr http.ResponseWriter, req *http.Request
 		return
 	}
 
+	w.mu.Lock()
 	w.images = data.Images
 	w.start = data.Start
+	w.mu.Unlock()
 
 	wr.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(wr).Encode(map[string]string{"status": "ok"})
-}
-
-// updateViewer sends updated data to the browser if open
-func (w *WailsViewerReal) updateViewer() {
-	if w.serverPort == 0 {
-		return
-	}
-
-	updateURL := fmt.Sprintf("http://127.0.0.1:%d/api/update", w.serverPort)
-	payload, _ := json.Marshal(map[string]interface{}{
-		"images": w.images,
-		"start":  w.start,
-	})
-
-	_, _ = http.Post(updateURL, "application/json", bytes.NewBuffer(payload))
 }
 
 // openBrowser opens the URL in the default browser
@@ -242,7 +218,7 @@ func (w *WailsViewerReal) openBrowser(url string) error {
 
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
@@ -259,13 +235,17 @@ func NewWailsViewerReal() ViewerClient {
 
 // SetChapters sets the chapters for navigation
 func (w *WailsViewerReal) SetChapters(chapters []ChapterInfo) {
+	w.mu.Lock()
 	w.chapters = chapters
 	w.currentChapterIndex = 0
+	w.mu.Unlock()
 }
 
 // SetScraper sets the scraper for fetching chapter images
 func (w *WailsViewerReal) SetScraper(scraper interface {
 	GetChapterImages(url string) ([]string, error)
 }) {
+	w.mu.Lock()
 	w.scraper = scraper
+	w.mu.Unlock()
 }

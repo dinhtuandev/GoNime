@@ -3,12 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
 	"gonime/internal/config"
 	"gonime/internal/fuzzy"
+	"gonime/internal/player"
 	"gonime/internal/render"
 	"gonime/internal/scraper"
 	"gonime/internal/ui/i18n"
@@ -48,13 +48,6 @@ type mangaPlayMsg struct {
 }
 
 type chafaRenderMsg struct {
-	rendered string
-	imageIdx int
-	err      error
-}
-
-// thumbnailRenderMsg is used when rendering a small thumbnail preview via chafa
-type thumbnailRenderMsg struct {
 	rendered string
 	imageIdx int
 	err      error
@@ -125,13 +118,13 @@ func NewMangaModel(parent MainModel) MangaModel {
 	return MangaModel{
 		parent:     parent,
 		screen:     mangaScreenTrending,
-		scraper:    scraper.GetMangaSource("otruyen"),
+		scraper:    scraper.GetMangaSource("truyenvn"),
 		cfgManager: mgr,
 		cfg:        cfg,
 		cacheDir:   cacheDir,
 		termWidth:  100,
 		termHeight: 40,
-		source:     "otruyen",
+		source:     "truyenvn",
 		sources:    sources,
 		viewer:     viewer.NewWailsViewerReal(),
 		loading:    true,
@@ -144,15 +137,6 @@ func (m MangaModel) Init() tea.Cmd {
 
 func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case thumbnailRenderMsg:
-		// Update UI with thumbnail render result
-		m.renderedImage = msg.rendered
-		m.renderLoading = false
-		if msg.err != nil {
-			m.err = msg.err
-		}
-		return m, nil
-
 	case tea.WindowSizeMsg:
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
@@ -194,6 +178,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.index = 0
 			m.screen = mangaScreenChapters
 			m.err = nil
+			m.syncViewerChapters(msg.manga)
 			// Trigger poster render if cover URL available
 			if msg.manga.Cover != "" {
 				m.posterArt = ""
@@ -273,6 +258,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.source = m.sources[(currentIdx+1)%len(m.sources)]
 				m.scraper = scraper.GetMangaSource(m.source)
+				m.syncViewerScraper()
 				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.scraper.Name())
 				m.loading = true
 				m.trendingList = nil
@@ -321,6 +307,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.source = m.sources[(currentIdx+1)%len(m.sources)]
 				m.scraper = scraper.GetMangaSource(m.source)
+				m.syncViewerScraper()
 				m.statusMsg = fmt.Sprintf("⚡ %s: %s", i18n.T(m.cfg, "status_source_switched"), m.scraper.Name())
 				m.loading = true
 				m.mangaList = nil
@@ -554,8 +541,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.screen == mangaScreenReading && m.currentChapIdx < len(m.chapterList) {
 				m.lastPlayTime = time.Now()
 				chapURL := m.chapterList[m.currentChapIdx].URL
-				cmd := exec.Command("cmd", "/c", "start", "", chapURL)
-				_ = cmd.Start()
+				_ = player.PlayWithBrowser(chapURL)
 				m.statusMsg = "🌐 " + i18n.T(m.cfg, "manga_msg_browser_open")
 			}
 
@@ -738,17 +724,33 @@ func (m MangaModel) renderImageCmd(imageIdx int) tea.Cmd {
 			}
 		}
 
-		// First try thumbnail rendering as a lightweight preview
-		if thumb, errThumb := renderer.RenderThumbnail(ctx, imageURL, 40, 12); errThumb == nil && thumb != "" {
-			return thumbnailRenderMsg{imageIdx: imageIdx, rendered: thumb, err: nil}
-		}
-		// Fallback to full render if thumbnail failed or not supported
 		rendered, err := renderer.RenderURL(ctx, imageURL)
 		return chafaRenderMsg{
 			imageIdx: imageIdx,
 			rendered: rendered,
 			err:      err,
 		}
+	}
+}
+
+// syncViewerChapters pushes the chapter list and active scraper to the web viewer.
+func (m MangaModel) syncViewerChapters(manga *scraper.Manga) {
+	wv, ok := m.viewer.(*viewer.WailsViewerReal)
+	if !ok || manga == nil {
+		return
+	}
+	chapters := make([]viewer.ChapterInfo, 0, len(manga.Chapters))
+	for _, ch := range manga.Chapters {
+		chapters = append(chapters, viewer.ChapterInfo{Title: ch.Title, URL: ch.URL})
+	}
+	wv.SetChapters(chapters)
+	wv.SetScraper(m.scraper)
+}
+
+// syncViewerScraper keeps the web viewer on the same source as the TUI.
+func (m MangaModel) syncViewerScraper() {
+	if wv, ok := m.viewer.(*viewer.WailsViewerReal); ok {
+		wv.SetScraper(m.scraper)
 	}
 }
 

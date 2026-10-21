@@ -56,6 +56,9 @@ type posterRenderMsg struct {
 	err      error
 }
 
+// maxPosterSize giới hạn dung lượng ảnh poster tải về.
+const maxPosterSize = 20 * 1024 * 1024
+
 type tickMsg struct{}
 
 func tickCmd() tea.Cmd {
@@ -702,11 +705,16 @@ func posterSizedCmd(imageURL, size string) tea.Cmd {
 			return posterRenderMsg{}
 		}
 		// Download image to temp file
-		resp, err := http.Get(imageURL) //nolint:noctx
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURL) //nolint:noctx
 		if err != nil {
 			return posterRenderMsg{err: err}
 		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return posterRenderMsg{err: fmt.Errorf("poster: HTTP %s", resp.Status)}
+		}
 
 		tmpFile, err := os.CreateTemp("", "gonime-poster-*.jpg")
 		if err != nil {
@@ -715,7 +723,7 @@ func posterSizedCmd(imageURL, size string) tea.Cmd {
 		tmpPath := tmpFile.Name()
 		defer os.Remove(tmpPath)
 
-		if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		if _, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxPosterSize)); err != nil {
 			tmpFile.Close()
 			return posterRenderMsg{err: err}
 		}

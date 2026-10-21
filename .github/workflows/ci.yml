@@ -52,7 +52,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Run tests
+      - name: Run unit tests
+        # Integration tests hit live third-party APIs and are excluded by build tag.
+        # Run them manually with: go test -tags integration ./internal/api ./internal/scraper
         run: go test -race -count=1 -timeout=120s ./...
 
       - name: Build

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -59,15 +61,15 @@ type nguoncDetailResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	Movie   struct {
-		Name        string `json:"name"`
-		Slug        string `json:"slug"`
-		OriginName  string `json:"original_name"`
-		PosterURL   string `json:"poster_url"`
-		Description string `json:"description"`
-		Year        string `json:"year"`
-		Quality     string `json:"quality"`
-		Total       int    `json:"total_episodes"`
-		CurrentEp   string `json:"current_episode"`
+		Name        string  `json:"name"`
+		Slug        string  `json:"slug"`
+		OriginName  string  `json:"original_name"`
+		PosterURL   string  `json:"poster_url"`
+		Description string  `json:"description"`
+		Year        flexInt `json:"year"`
+		Quality     string  `json:"quality"`
+		Total       int     `json:"total_episodes"`
+		CurrentEp   string  `json:"current_episode"`
 		Episodes    []struct {
 			ServerName string `json:"server_name"`
 			Items      []struct {
@@ -92,6 +94,10 @@ func (s *NguonCScraper) GetTrending(page int) ([]AnimeItem, string, error) {
 		return nil, "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("nguonc trending: HTTP %s", resp.Status)
+	}
 
 	var result nguoncListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -119,6 +125,10 @@ func (s *NguonCScraper) Search(query string) ([]AnimeItem, string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("nguonc search: HTTP %s", resp.Status)
+	}
+
 	var result nguoncListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, "", err
@@ -144,14 +154,17 @@ func (s *NguonCScraper) GetDetails(slug string) (*MovieInfo, []EpisodeData, erro
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("nguonc detail: HTTP %s", resp.Status)
+	}
+
 	var result nguoncDetailResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, nil, err
 	}
 
 	m := result.Movie
-	year := 0
-	fmt.Sscanf(m.Year, "%d", &year)
+	year := int(m.Year)
 
 	info := &MovieInfo{
 		Name:        m.Name,
@@ -189,4 +202,22 @@ func (s *NguonCScraper) GetDetails(slug string) (*MovieInfo, []EpisodeData, erro
 
 func (s *NguonCScraper) GetEpisodes(slug string) (*MovieInfo, []EpisodeData, error) {
 	return s.GetDetails(slug)
+}
+
+// flexInt chấp nhận year dạng số, chuỗi số, rỗng hoặc null từ API NguonC.
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		*f = 0
+		return nil
+	}
+	*f = flexInt(v)
+	return nil
 }

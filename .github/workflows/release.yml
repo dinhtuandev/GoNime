@@ -35,6 +35,7 @@ jobs:
         run: go vet ./...
 
       - name: Test
+        # Unit tests only; integration tests need live third-party APIs.
         run: go test -race -count=1 -timeout=120s ./...
 
   # ── Build matrix: cross-compile for all target platforms ───────────────────

@@ -37,6 +37,7 @@ type SettingsModel struct {
 	editBuffer   string
 	err          error
 	statusMsg    string
+	help         bool
 
 	// Trạng thái dependency
 	hasMPV         bool
@@ -182,11 +183,20 @@ func (m *SettingsModel) applyEdit() error {
 	if err := m.manager.SaveConfig(m.cfg); err != nil {
 		return fmt.Errorf(i18n.T(m.cfg, "set_err_save"), err)
 	}
+	m.syncParent()
 	return nil
+}
+
+// syncParent refreshes the main menu so language/player changes apply at once.
+func (m *SettingsModel) syncParent() {
+	m.parent.cfg = m.cfg
+	m.parent.menuItems = getMenu(m.cfg)
 }
 
 func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case tea.KeyMsg:
 
 		// --- Khi đang chỉnh sửa ---
@@ -237,7 +247,19 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
+			if m.help {
+				m.help = false
+				break
+			}
 			return m.parent, nil
+		case "q":
+			if !m.isEditing {
+				return m.parent, nil
+			}
+		case "?":
+			if !m.isEditing {
+				m.help = !m.help
+			}
 		case "up", "k":
 			if m.index > 0 {
 				m.index--
@@ -259,6 +281,7 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				defaultCfg := config.GetDefaultConfigForManager(m.manager)
 				if err := m.manager.SaveConfig(defaultCfg); err == nil {
 					m.cfg = defaultCfg
+					m.syncParent()
 					m.statusMsg = i18n.T(m.cfg, "set_reset_ok")
 				}
 			}
@@ -268,7 +291,25 @@ func (m SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m SettingsModel) hints() []string {
+	if m.isEditing {
+		return []string{"Enter: OK", "Esc: Huỷ"}
+	}
+	return []string{
+		i18n.T(m.cfg, "hint_esc_back"),
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_enter_edit"),
+		i18n.T(m.cfg, "hint_default"),
+		"?: Trợ giúp",
+	}
+}
+
 func (m SettingsModel) View() string {
+	m.parent.ui.reset()
+	if m.help {
+		return renderHelp(m.parent.width, m.parent.height, m.hints())
+	}
+
 	var b strings.Builder
 
 	b.WriteString(drawHeader("⚙️ ", i18n.T(m.cfg, "title_settings"), nil, theme.Gold))
@@ -348,7 +389,9 @@ func (m SettingsModel) View() string {
 	normValStyle := lipgloss.NewStyle().Foreground(theme.TextMuted)
 	selValStyle := lipgloss.NewStyle().Foreground(theme.Primary)
 
-	for i, label := range m.getLabels() {
+	labels := m.getLabels()
+	m.parent.ui.beginRowsStride(&b, 0, len(labels), 4)
+	for i, label := range labels {
 		isSelected := i == m.index
 
 		if isSelected && m.isEditing {
@@ -368,6 +411,10 @@ func (m SettingsModel) View() string {
 				b.WriteString("\n    ")
 				b.WriteString(normValStyle.Render(val))
 			}
+			if desc := settingDescription(i); desc != "" {
+				b.WriteString("\n    ")
+				b.WriteString(theme.Muted.Render(desc))
+			}
 			b.WriteString("\n\n")
 		}
 	}
@@ -384,20 +431,52 @@ func (m SettingsModel) View() string {
 		b.WriteString(drawSuccessLine(m.statusMsg))
 	}
 
-	if m.isEditing {
-		b.WriteString(drawStatusBar([]string{
-			"Enter: OK",
-			"Esc: Cancel",
-		}))
-	} else {
-		b.WriteString(drawStatusBar([]string{
-			i18n.T(m.cfg, "hint_esc_back"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_enter_edit"),
-			i18n.T(m.cfg, "hint_default"),
-		}))
-	}
+	writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+func settingDescription(i int) string {
+	switch i {
+	case 0:
+		return "Trình phát video: mpv, vlc hoặc auto"
+	case 1:
+		return "Thư mục lưu anime đã tải"
+	case 2:
+		return "Thư mục cache ảnh manga"
+	case 3:
+		return "Tỉ lệ hiển thị ảnh manga trong terminal"
+	case 4:
+		return "URL nguồn truyện dự phòng"
+	case 5:
+		return "Cách render ảnh: chafa, native hoặc block"
+	case 6:
+		return "Ngôn ngữ giao diện: vi hoặc en"
+	}
+	return ""
+}
+
+func (m SettingsModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || m.isEditing {
+		return m, nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		m.index = clampIndex(m.index, -1, len(m.getLabels()))
+	case tea.MouseButtonWheelDown:
+		m.index = clampIndex(m.index, 1, len(m.getLabels()))
+	case tea.MouseButtonLeft:
+		if key, ok := m.parent.ui.hintKeyAt(msg.X, msg.Y); ok {
+			return m.Update(key)
+		}
+		if row, ok := m.parent.ui.rowAt(msg.X, msg.Y); ok && row < len(m.getLabels()) {
+			if row == m.index {
+				key, _ := keyMsgFor("enter")
+				return m.Update(key)
+			}
+			m.index = row
+		}
+	}
+	return m, nil
 }

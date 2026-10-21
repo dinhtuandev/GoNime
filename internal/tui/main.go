@@ -47,6 +47,8 @@ type MainModel struct {
 	height    int
 	tick      int
 	cfg       *config.Config
+	ui        *uiState
+	help      bool
 }
 
 func NewMainModel() MainModel {
@@ -57,6 +59,7 @@ func NewMainModel() MainModel {
 		screen:    ScreenMain,
 		cfg:       cfg,
 		menuItems: getMenu(cfg),
+		ui:        newUIState(),
 	}
 }
 
@@ -87,6 +90,12 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 
+		case "?":
+			m.help = !m.help
+
+		case "esc":
+			m.help = false
+
 		case "up", "k":
 			if m.menuIndex > 0 {
 				m.menuIndex--
@@ -99,19 +108,39 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", " ":
 			return m.handleMenuSelection()
-
-		case "esc":
-			if m.screen != ScreenMain {
-				mgr, _ := config.NewManager()
-				if cfg, err := mgr.LoadConfig(); err == nil {
-					m.cfg = cfg
-					m.menuItems = getMenu(m.cfg)
-				}
-				m.screen = ScreenMain
-			}
 		}
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	}
 
+	return m, nil
+}
+
+func (m MainModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.menuIndex > 0 {
+			m.menuIndex--
+		}
+	case tea.MouseButtonWheelDown:
+		if m.menuIndex < len(m.menuItems)-1 {
+			m.menuIndex++
+		}
+	case tea.MouseButtonLeft:
+		if key, ok := m.ui.hintKeyAt(msg.X, msg.Y); ok {
+			return m.Update(key)
+		}
+		if row, ok := m.ui.rowAt(msg.X, msg.Y); ok && row >= 0 && row < len(m.menuItems) {
+			if row == m.menuIndex {
+				return m.handleMenuSelection()
+			}
+			m.menuIndex = row
+		}
+	}
 	return m, nil
 }
 
@@ -145,7 +174,21 @@ func (m MainModel) handleMenuSelection() (tea.Model, tea.Cmd) {
 
 // ─── View ─────────────────────────────────────────────────────────────────────
 
+func (m MainModel) hints() []string {
+	return []string{
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_enter_select_2"),
+		"?",
+		i18n.T(m.cfg, "hint_quit"),
+	}
+}
+
 func (m MainModel) View() string {
+	m.ui.reset()
+	if m.help {
+		return renderHelp(m.width, m.height, m.hints())
+	}
+
 	var b strings.Builder
 
 	// ── Logo ──────────────────────────────────────────────────────────────────
@@ -166,6 +209,7 @@ func (m MainModel) View() string {
 	b.WriteString("\n\n")
 
 	// ── Menu Items ────────────────────────────────────────────────────────────
+	m.ui.beginRows(&b, 0, len(m.menuItems))
 	for i, item := range m.menuItems {
 		if i == m.menuIndex {
 			b.WriteString(renderSelectedMenuItem(i+1, item))
@@ -180,11 +224,7 @@ func (m MainModel) View() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(theme.TextDim).Render(strings.Repeat("─", 56)))
 
 	// ── Status bar ────────────────────────────────────────────────────────────
-	b.WriteString(drawStatusBar([]string{
-		i18n.T(m.cfg, "hint_nav"),
-		i18n.T(m.cfg, "hint_enter_select_2"),
-		i18n.T(m.cfg, "hint_quit"),
-	}))
+	writeStatusBar(&b, m.ui, m.width, m.hints())
 	b.WriteString("\n")
 
 	return b.String()

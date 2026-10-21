@@ -96,6 +96,9 @@ type MangaModel struct {
 	source          string
 	sources         []string
 	lastPlayTime    time.Time
+	returnScreen    mangaScreen
+	returnIndex     int
+	help            bool
 }
 
 func NewMangaModel(parent MainModel) MangaModel {
@@ -241,8 +244,14 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch key {
 			case "ctrl+c":
 				return m, tea.Quit
-			case "esc":
+			case "esc", "q":
+				if m.help {
+					m.help = false
+					return m, nil
+				}
 				return m.parent, nil
+			case "?":
+				m.help = !m.help
 			case "s":
 				m.screen = mangaScreenSearch
 				m.index = 0
@@ -275,6 +284,8 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.trendingList) > 0 && m.index < len(m.trendingList) {
 					selected := m.trendingList[m.index]
 					m.selectedManga = &selected
+					m.returnScreen = mangaScreenTrending
+					m.returnIndex = m.index
 					m.loading = true
 					m.err = nil
 					return m, m.getMangaDetail(selected.Slug)
@@ -349,6 +360,8 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(displayList) > 0 && m.index < len(displayList) {
 					selected := displayList[m.index]
 					m.selectedManga = &selected
+					m.returnScreen = mangaScreenSearch
+					m.returnIndex = m.index
 					m.loading = true
 					m.err = nil
 					return m, m.getMangaDetail(selected.Slug)
@@ -379,7 +392,14 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 
-		case "esc":
+		case "?":
+			m.help = !m.help
+
+		case "esc", "q":
+			if m.help {
+				m.help = false
+				break
+			}
 			switch m.screen {
 			case mangaScreenReading:
 				m.screen = mangaScreenChapters
@@ -387,14 +407,19 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.renderedImage = ""
 				m.err = nil
 			case mangaScreenChapters:
-				m.screen = mangaScreenTrending
+				m.screen = m.returnScreen
 				m.selectedManga = nil
 				m.chapterList = nil
-				m.index = 0
+				m.index = m.returnIndex
 				m.err = nil
-				if len(m.trendingList) == 0 {
+				m.posterArt = ""
+				if m.screen == mangaScreenTrending && len(m.trendingList) == 0 {
 					m.loading = true
 					return m, m.fetchTrending()
+				}
+				if m.screen == mangaScreenSearch && len(m.mangaList) == 0 && m.searchQuery != "" {
+					m.loading = true
+					return m, m.searchManga(m.searchQuery)
 				}
 			}
 
@@ -430,18 +455,12 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "pgup", "ctrl+u":
 			if m.screen == mangaScreenChapters {
-				m.index -= 10
-				if m.index < 0 {
-					m.index = 0
-				}
+				m.index = clampIndex(m.index, -10, len(m.chapterList))
 			}
 
 		case "pgdown", "ctrl+d":
 			if m.screen == mangaScreenChapters {
-				m.index += 10
-				if m.index >= len(m.chapterList) {
-					m.index = len(m.chapterList) - 1
-				}
+				m.index = clampIndex(m.index, 10, len(m.chapterList))
 			}
 
 		case "g":
@@ -471,7 +490,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "enter":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			switch m.screen {
@@ -494,22 +513,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "n":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
-				return m, nil
-			}
-			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
-				if m.currentChapIdx > 0 {
-					m.lastPlayTime = time.Now()
-					m.currentChapIdx--
-					m.index = m.currentChapIdx
-					m.loading = true
-					return m, m.loadChapterImages(m.currentChapIdx)
-				}
-				m.statusMsg = "⚠ " + i18n.T(m.cfg, "manga_msg_last_chap")
-			}
-
-		case "p":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
@@ -520,11 +524,26 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					return m, m.loadChapterImages(m.currentChapIdx)
 				}
+				m.statusMsg = "⚠ " + i18n.T(m.cfg, "manga_msg_last_chap")
+			}
+
+		case "p":
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
+				return m, nil
+			}
+			if m.screen == mangaScreenReading || m.screen == mangaScreenChapters {
+				if m.currentChapIdx > 0 {
+					m.lastPlayTime = time.Now()
+					m.currentChapIdx--
+					m.index = m.currentChapIdx
+					m.loading = true
+					return m, m.loadChapterImages(m.currentChapIdx)
+				}
 				m.statusMsg = "⚠ " + i18n.T(m.cfg, "manga_msg_first_chap")
 			}
 
 		case "r":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if m.screen == mangaScreenReading && len(m.images) > 0 {
@@ -535,7 +554,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "w":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if m.screen == mangaScreenReading && m.currentChapIdx < len(m.chapterList) {
@@ -546,7 +565,7 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "o":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if m.screen == mangaScreenReading && len(m.images) > 0 {
@@ -568,17 +587,74 @@ func (m MangaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		if msg.Action != tea.MouseActionPress {
-			return m, nil
-		}
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m.handleMouseWheel(-1)
-		case tea.MouseButtonWheelDown:
-			return m.handleMouseWheel(1)
-		}
+		return m.handleMouse(msg)
 	}
 
+	return m, nil
+}
+
+// currentList returns the list the cursor currently navigates.
+func (m MangaModel) currentList() []scraper.Manga {
+	if m.screen == mangaScreenSearch {
+		if m.searchQuery != "" {
+			return m.fuzzyResults
+		}
+		return m.mangaList
+	}
+	return m.trendingList
+}
+
+func (m MangaModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if m.help {
+		if msg.Button == tea.MouseButtonLeft {
+			m.help = false
+		}
+		return m, nil
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		return m.handleMouseWheel(-1)
+	case tea.MouseButtonWheelDown:
+		return m.handleMouseWheel(1)
+
+	case tea.MouseButtonLeft:
+		if key, ok := m.parent.ui.hintKeyAt(msg.X, msg.Y); ok {
+			return m.Update(key)
+		}
+
+		if m.screen == mangaScreenReading {
+			if len(m.images) == 0 {
+				return m, nil
+			}
+			key := "right"
+			if msg.X < m.parent.width/2 {
+				key = "left"
+			}
+			k, _ := keyMsgFor(key)
+			return m.Update(k)
+		}
+
+		row, ok := m.parent.ui.rowAt(msg.X, msg.Y)
+		if !ok {
+			return m, nil
+		}
+		total := len(m.currentList())
+		if m.screen == mangaScreenChapters {
+			total = len(m.chapterList)
+		}
+		if row < 0 || row >= total {
+			return m, nil
+		}
+		if row == m.index {
+			k, _ := keyMsgFor("enter")
+			return m.Update(k)
+		}
+		m.index = row
+	}
 	return m, nil
 }
 
@@ -594,45 +670,13 @@ func (m MangaModel) handleMouseWheel(delta int) (tea.Model, tea.Cmd) {
 		m.renderLoading = true
 		return m, m.renderImageCmd(m.currentImageIdx)
 	case mangaScreenChapters:
-		nextIdx := m.index + delta
-		if nextIdx < 0 {
-			nextIdx = 0
-		}
-		if nextIdx >= len(m.chapterList) {
-			nextIdx = len(m.chapterList) - 1
-		}
-		if nextIdx >= 0 {
-			m.index = nextIdx
-		}
+		m.index = clampIndex(m.index, delta, len(m.chapterList))
 		return m, nil
 	case mangaScreenTrending:
-		nextIdx := m.index + delta
-		if nextIdx < 0 {
-			nextIdx = 0
-		}
-		if nextIdx >= len(m.trendingList) {
-			nextIdx = len(m.trendingList) - 1
-		}
-		if nextIdx >= 0 {
-			m.index = nextIdx
-		}
+		m.index = clampIndex(m.index, delta, len(m.trendingList))
 		return m, nil
 	case mangaScreenSearch:
-		displayLen := len(m.mangaList)
-		if m.searchQuery != "" {
-			displayLen = len(m.fuzzyResults)
-		}
-		if displayLen == 0 {
-			return m, nil
-		}
-		nextIdx := m.index + delta
-		if nextIdx < 0 {
-			nextIdx = 0
-		}
-		if nextIdx >= displayLen {
-			nextIdx = displayLen - 1
-		}
-		m.index = nextIdx
+		m.index = clampIndex(m.index, delta, len(m.currentList()))
 		return m, nil
 	default:
 		return m, nil
@@ -768,8 +812,52 @@ func (m MangaModel) openInViewer(imageIdx int) tea.Cmd {
 
 // --- View ---
 
+func (m MangaModel) hints() []string {
+	switch m.screen {
+	case mangaScreenReading:
+		return []string{
+			i18n.T(m.cfg, "hint_nav_page"),
+			i18n.T(m.cfg, "hint_np_chapter"),
+			i18n.T(m.cfg, "hint_viewer"),
+			i18n.T(m.cfg, "hint_browser"),
+			"r: " + i18n.T(m.cfg, "hint_retry"),
+			i18n.T(m.cfg, "hint_esc_back"),
+		}
+	case mangaScreenChapters:
+		return []string{
+			i18n.T(m.cfg, "hint_esc_back"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_pgup_dn"),
+			i18n.T(m.cfg, "hint_enter_read"),
+			i18n.T(m.cfg, "hint_np_chapter"),
+			"f: ⭐",
+		}
+	case mangaScreenSearch:
+		return []string{
+			"Esc: " + i18n.T(m.cfg, "manga_tab_trending"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_enter_select_2"),
+			"Ctrl+O: " + i18n.T(m.cfg, "hint_switch_source"),
+			"Ctrl+U: " + i18n.T(m.cfg, "hint_clear"),
+		}
+	default:
+		return []string{
+			"Ctrl+O: " + i18n.T(m.cfg, "hint_switch_source"),
+			"s: " + i18n.T(m.cfg, "hint_search"),
+			i18n.T(m.cfg, "hint_enter_open"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_esc_back"),
+		}
+	}
+}
+
 func (m MangaModel) View() string {
 	var b strings.Builder
+
+	m.parent.ui.reset()
+	if m.help {
+		return renderHelp(m.parent.width, m.parent.height, m.hints())
+	}
 
 	switch m.screen {
 
@@ -798,11 +886,17 @@ func (m MangaModel) View() string {
 				Foreground(theme.Secondary).
 				Background(theme.BackgroundLight).
 				Bold(true).
+				Width(listRowWidth(m.parent.width)).
 				Padding(0, 1)
 			normStyle := lipgloss.NewStyle().
 				Foreground(theme.TextSecondary).
 				Padding(0, 1)
-			for i, manga := range m.trendingList {
+
+			maxRows := listCapacity(m.parent.height, 16)
+			start, end := windowedRange(len(m.trendingList), m.index, maxRows)
+			m.parent.ui.beginRows(&b, start, end-start)
+			for i := start; i < end; i++ {
+				manga := m.trendingList[i]
 				rank := lipgloss.NewStyle().Foreground(theme.TextDim).Render(
 					fmt.Sprintf("%3d.", i+1))
 				if i == m.index {
@@ -812,19 +906,18 @@ func (m MangaModel) View() string {
 				}
 				b.WriteString("\n")
 			}
+			if len(m.trendingList) > end-start {
+				b.WriteString("  ")
+				b.WriteString(theme.Muted.Render(fmt.Sprintf("%d-%d / %d", start+1, end, len(m.trendingList))))
+				b.WriteString("\n")
+			}
 		}
 
 		if m.statusMsg != "" {
 			b.WriteString(drawSuccessLine(m.statusMsg))
 		}
 
-		b.WriteString(drawStatusBar([]string{
-			`Ctrl+O: ` + i18n.T(m.cfg, "hint_switch_source"),
-			`s: ` + i18n.T(m.cfg, "hint_search"),
-			i18n.T(m.cfg, "hint_enter_open"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_esc_back"),
-		}))
+		writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		b.WriteString("\n")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -873,6 +966,7 @@ func (m MangaModel) View() string {
 				Foreground(theme.Secondary).
 				Background(theme.BackgroundLight).
 				Bold(true).
+				Width(listRowWidth(m.parent.width)).
 				Padding(0, 1)
 			normStyle := lipgloss.NewStyle().
 				Foreground(theme.TextSecondary).
@@ -885,12 +979,21 @@ func (m MangaModel) View() string {
 				b.WriteString(theme.Muted.Render("'"))
 				b.WriteString("\n")
 			} else {
-				for i, manga := range displayList {
+				maxRows := listCapacity(m.parent.height, 17)
+				start, end := windowedRange(len(displayList), m.index, maxRows)
+				m.parent.ui.beginRows(&b, start, end-start)
+				for i := start; i < end; i++ {
+					manga := displayList[i]
 					if i == m.index {
 						b.WriteString("  " + selStyle.Render("▶  "+manga.Name))
 					} else {
 						b.WriteString("  " + normStyle.Render("   "+manga.Name))
 					}
+					b.WriteString("\n")
+				}
+				if len(displayList) > end-start {
+					b.WriteString("  ")
+					b.WriteString(theme.Muted.Render(fmt.Sprintf("%d-%d / %d", start+1, end, len(displayList))))
 					b.WriteString("\n")
 				}
 			}
@@ -900,13 +1003,7 @@ func (m MangaModel) View() string {
 			b.WriteString(drawSuccessLine(m.statusMsg))
 		}
 
-		b.WriteString(drawStatusBar([]string{
-			"Esc: " + i18n.T(m.cfg, "manga_tab_trending"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_enter_select_2"),
-			`Ctrl+o: ` + i18n.T(m.cfg, "hint_switch_source"),
-			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
-		}))
+		writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		b.WriteString("\n")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -917,7 +1014,7 @@ func (m MangaModel) View() string {
 		if m.selectedManga != nil {
 			mangaName = m.selectedManga.Name
 		}
-		b.WriteString(drawHeader("📚", mangaName, nil, theme.MangaAccent))
+		b.WriteString(drawHeader("📚", mangaName, []string{m.source}, theme.MangaAccent))
 
 		// Author / Status meta
 		if m.selectedManga != nil {
@@ -934,7 +1031,7 @@ func (m MangaModel) View() string {
 		b.WriteString(drawHeaderLine(theme.MangaAccent))
 
 		// -- Detail panel: poster + manga info --
-		if m.selectedManga != nil && m.posterArt != "" {
+		if m.selectedManga != nil && m.posterArt != "" && m.parent.width >= 80 {
 			accentStyle := lipgloss.NewStyle().Foreground(theme.MangaAccent).Bold(true)
 			mutedStyle := theme.Muted
 			var info strings.Builder
@@ -985,23 +1082,23 @@ func (m MangaModel) View() string {
 			b.WriteString(theme.Muted.Render(i18n.T(m.cfg, "manga_empty_chaps")))
 		} else {
 			total := len(m.chapterList)
-			start := 0
-			if m.index > 7 {
-				start = m.index - 7
+			reserved := 8
+			if m.posterArt != "" && m.parent.width >= 80 {
+				reserved = 14
 			}
-			end := start + 15
-			if end > total {
-				end = total
-			}
+			maxRows := listCapacity(m.parent.height, reserved)
+			start, end := windowedRange(total, m.index, maxRows)
 
 			selStyle := lipgloss.NewStyle().
 				Foreground(theme.Secondary).
 				Background(theme.BackgroundLight).
 				Bold(true).
+				Width(listRowWidth(m.parent.width)).
 				Padding(0, 1)
 			normStyle := theme.Chapter.Copy()
 			readingStyle := theme.ChapterActive.Copy()
 
+			m.parent.ui.beginRows(&b, start, end-start)
 			for i := start; i < end; i++ {
 				ch := m.chapterList[i]
 				dateStr := ""
@@ -1023,9 +1120,9 @@ func (m MangaModel) View() string {
 				b.WriteString("\n")
 			}
 
-			if total > 15 {
+			if total > maxRows {
 				b.WriteString("\n  ")
-				b.WriteString(theme.Muted.Render(fmt.Sprintf("%s: %d", i18n.T(m.cfg, "manga_chap_total"), total)))
+				b.WriteString(theme.Muted.Render(fmt.Sprintf("%d-%d / %d", start+1, end, total)))
 			}
 		}
 
@@ -1033,15 +1130,7 @@ func (m MangaModel) View() string {
 			b.WriteString(drawSuccessLine(m.statusMsg))
 		}
 
-		b.WriteString(drawStatusBar([]string{
-			i18n.T(m.cfg, "hint_esc_back"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_pgup_dn"),
-			i18n.T(m.cfg, "hint_start_end"),
-			i18n.T(m.cfg, "hint_enter_read"),
-			i18n.T(m.cfg, "hint_next_prev"),
-			"f: ⭐",
-		}))
+		writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		b.WriteString("\n")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1057,7 +1146,11 @@ func (m MangaModel) View() string {
 		current := m.currentImageIdx + 1
 
 		pageInfo := fmt.Sprintf("[%d/%d]", current, total)
-		b.WriteString(drawHeader("📖", chapTitle, []string{pageInfo}, theme.MangaAccent))
+		badges := []string{pageInfo}
+		if m.selectedManga != nil {
+			badges = []string{m.selectedManga.Name, pageInfo}
+		}
+		b.WriteString(drawHeader("📖", chapTitle, badges, theme.MangaAccent))
 
 		// Page progress bar
 		if total > 0 {
@@ -1075,10 +1168,10 @@ func (m MangaModel) View() string {
 		} else if m.err != nil {
 			b.WriteString(drawErrorLine(fmt.Sprintf("%v", m.err)))
 			b.WriteString("\n")
-			b.WriteString(drawStatusBar([]string{"r: " + i18n.T(m.cfg, "hint_retry"), i18n.T(m.cfg, "hint_esc_back")}))
+			writeStatusBar(&b, m.parent.ui, m.parent.width, []string{"r: " + i18n.T(m.cfg, "hint_retry"), i18n.T(m.cfg, "hint_esc_back")})
 		} else if len(m.images) == 0 {
 			b.WriteString(drawErrorLine(i18n.T(m.cfg, "manga_empty_pages")))
-			b.WriteString(drawStatusBar([]string{i18n.T(m.cfg, "hint_esc_back"), "w: " + i18n.T(m.cfg, "hint_browser")}))
+			writeStatusBar(&b, m.parent.ui, m.parent.width, []string{i18n.T(m.cfg, "hint_esc_back"), "w: " + i18n.T(m.cfg, "hint_browser")})
 		} else {
 			if m.renderLoading {
 				b.WriteString(drawLoadingLine(i18n.T(m.cfg, "manga_rendering"), m.tick))
@@ -1101,16 +1194,7 @@ func (m MangaModel) View() string {
 			}
 			b.WriteString(chafaStatus)
 
-			b.WriteString(drawStatusBar([]string{
-				i18n.T(m.cfg, "hint_nav_page"),
-				i18n.T(m.cfg, "hint_wheel_page"),
-				i18n.T(m.cfg, "hint_next_page"),
-				i18n.T(m.cfg, "hint_np_chapter"),
-				"r: " + i18n.T(m.cfg, "hint_retry"),
-				i18n.T(m.cfg, "hint_viewer"),
-				i18n.T(m.cfg, "hint_browser"),
-				"f: ⭐",
-			}))
+			writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		}
 
 		if m.statusMsg != "" {

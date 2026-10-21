@@ -8,8 +8,10 @@ import (
 	"gonime/internal/api"
 	"gonime/internal/config"
 	"gonime/internal/player"
+	"gonime/internal/scraper"
 	"gonime/internal/ui/i18n"
 	"gonime/internal/ui/theme"
+	"gonime/internal/viewer"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,6 +30,8 @@ type HistoryModel struct {
 	tick        int
 	tab         listTab
 	cfg         *config.Config
+	confirm     string // "" | "del" | "clear"
+	help        bool
 }
 
 // visibleIndices trả về index thực trong m.items theo tab hiện tại.
@@ -99,12 +103,46 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tickCmd()
 
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case tea.KeyMsg:
+		key := msg.String()
+
+		if m.confirm != "" {
+			switch key {
+			case "y":
+				if m.confirm == "del" {
+					if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
+						realIdx := vis[m.index]
+						m.items = append(m.items[:realIdx], m.items[realIdx+1:]...)
+						_ = m.manager.SaveHistory(m.items)
+						if m.index >= len(m.visibleIndices()) && m.index > 0 {
+							m.index--
+						}
+						m.statusMsg = i18n.T(m.cfg, "msg_del_item")
+					}
+				} else if m.confirm == "clear" {
+					if err := m.manager.ClearHistory(); err == nil {
+						m.items = nil
+						m.index = 0
+						m.statusMsg = i18n.T(m.cfg, "msg_del_all")
+					}
+				}
+				m.confirm = ""
+			case "n", "esc", "q":
+				m.confirm = ""
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
-		case "esc":
+		case "esc", "q":
 			return m.parent, nil
+		case "?":
+			m.help = !m.help
 		case "1":
 			// Tab Anime
 			if m.tab != tabAnime {
@@ -181,19 +219,11 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "d":
 			if vis := m.visibleIndices(); len(vis) > 0 && m.index < len(vis) {
-				realIdx := vis[m.index]
-				m.items = append(m.items[:realIdx], m.items[realIdx+1:]...)
-				_ = m.manager.SaveHistory(m.items)
-				if m.index >= len(m.visibleIndices()) && m.index > 0 {
-					m.index--
-				}
-				m.statusMsg = i18n.T(m.cfg, "msg_del_item")
+				m.confirm = "del"
 			}
 		case "c":
-			if err := m.manager.ClearHistory(); err == nil {
-				m.items = nil
-				m.index = 0
-				m.statusMsg = i18n.T(m.cfg, "msg_del_all")
+			if len(m.items) > 0 {
+				m.confirm = "clear"
 			}
 		}
 	}
@@ -201,9 +231,90 @@ func (m HistoryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m HistoryModel) wheelTo(delta int) (tea.Model, tea.Cmd) {
+	vis := m.visibleIndices()
+	m.index = clampIndex(m.index, delta, len(vis))
+	m.posterArt = ""
+	if len(vis) > 0 && m.index < len(vis) {
+		if url := m.items[vis[m.index]].ThumbURL; url != "" {
+			return m, thumbnailCmd(url)
+		}
+	}
+	return m, nil
+}
+
+func (m HistoryModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if m.help {
+		if msg.Button == tea.MouseButtonLeft {
+			m.help = false
+		}
+		return m, nil
+	}
+	if m.confirm != "" {
+		return m, nil
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		return m.wheelTo(-1)
+	case tea.MouseButtonWheelDown:
+		return m.wheelTo(1)
+	case tea.MouseButtonLeft:
+		if key, ok := m.parent.ui.hintKeyAt(msg.X, msg.Y); ok {
+			return m.Update(key)
+		}
+		row, ok := m.parent.ui.rowAt(msg.X, msg.Y)
+		if !ok || row < 0 || row >= len(m.visibleIndices()) {
+			return m, nil
+		}
+		if row == m.index {
+			k, _ := keyMsgFor("enter")
+			return m.Update(k)
+		}
+		m.index = row
+		m.posterArt = ""
+		if url := m.items[m.visibleIndices()[row]].ThumbURL; url != "" {
+			return m, thumbnailCmd(url)
+		}
+	}
+	return m, nil
+}
+
+func (m HistoryModel) hints() []string {
+	if m.confirm == "del" {
+		return []string{"y: Xác nhận xoá", "n/Esc: Huỷ"}
+	}
+	if m.confirm == "clear" {
+		return []string{"y: Xác nhận xoá tất cả", "n/Esc: Huỷ"}
+	}
+	return []string{
+		i18n.T(m.cfg, "hint_esc_back"),
+		"1/2: Tab",
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_enter_reopen"),
+		i18n.T(m.cfg, "hint_del_item"),
+		i18n.T(m.cfg, "hint_del_all"),
+	}
+}
+
 func (m HistoryModel) playHistoryItem(item config.HistoryItem) tea.Cmd {
 	return func() tea.Msg {
 		if item.URL == "" {
+			return playAnimeMsg{err: errors.New(i18n.T(m.cfg, "err_no_play_url"))}
+		}
+
+		if item.Type == "manga" {
+			for _, name := range scraper.GetMangaSourceNames() {
+				images, err := scraper.GetMangaSource(name).GetChapterImages(item.URL)
+				if err != nil || len(images) == 0 {
+					continue
+				}
+				v := viewer.NewWailsViewerReal()
+				return playAnimeMsg{err: v.Open(images, 0)}
+			}
 			return playAnimeMsg{err: errors.New(i18n.T(m.cfg, "err_no_play_url"))}
 		}
 
@@ -237,6 +348,11 @@ func (m HistoryModel) playHistoryItem(item config.HistoryItem) tea.Cmd {
 func (m HistoryModel) View() string {
 	var b strings.Builder
 
+	m.parent.ui.reset()
+	if m.help {
+		return renderHelp(m.parent.width, m.parent.height, m.hints())
+	}
+
 	var tabs []string
 	animeTab := theme.BadgeActive.Render(i18n.T(m.cfg, "tab_anime"))
 	mangaTab := theme.Badge.Render(i18n.T(m.cfg, "tab_manga"))
@@ -247,7 +363,14 @@ func (m HistoryModel) View() string {
 	tabs = append(tabs, animeTab, mangaTab)
 
 	b.WriteString(drawHeader("📜", i18n.T(m.cfg, "title_history"), nil, theme.Primary))
+	tabY := strings.Count(b.String(), "\n") + 1
 	b.WriteString(drawTabs(tabs))
+	tabX := 2
+	for i, t := range tabs {
+		w := lipgloss.Width(t)
+		m.parent.ui.addKeyHit(tabX, tabX+w, tabY, fmt.Sprintf("%d", i+1))
+		tabX += w + 1
+	}
 	b.WriteString(drawHeaderLine(theme.Primary))
 	b.WriteString("\n")
 
@@ -302,6 +425,7 @@ func (m HistoryModel) View() string {
 
 		// Build LEFT list
 		var leftB strings.Builder
+		top := strings.Count(b.String(), "\n")
 		leftB.WriteString("\n")
 		maxRows := 12
 		if m.parent.height > 0 {
@@ -314,6 +438,8 @@ func (m HistoryModel) View() string {
 			}
 		}
 		start, end := windowedRange(len(visible), m.index, maxRows)
+		m.parent.ui.beginRows(&leftB, start, end-start)
+		m.parent.ui.shiftRowLine(top)
 		for row := start; row < end; row++ {
 			idx := visible[row]
 			item := m.items[idx]
@@ -400,18 +526,19 @@ func (m HistoryModel) View() string {
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftStyle.Render(leftB.String()), "  ", rightStr))
 	}
 
+	if m.confirm == "del" {
+		b.WriteString("\n")
+		b.WriteString(theme.WarningText.Render("  ⚠ Xoá mục đang chọn? (y/n)"))
+	} else if m.confirm == "clear" {
+		b.WriteString("\n")
+		b.WriteString(theme.WarningText.Render("  ⚠ Xoá toàn bộ lịch sử? (y/n)"))
+	}
+
 	if m.statusMsg != "" {
 		b.WriteString(drawSuccessLine(m.statusMsg))
 	}
 
-	b.WriteString(drawStatusBar([]string{
-		i18n.T(m.cfg, "hint_esc_back"),
-		i18n.T(m.cfg, "hint_nav"),
-		i18n.T(m.cfg, "hint_pgup_dn"),
-		i18n.T(m.cfg, "hint_enter_reopen"),
-		i18n.T(m.cfg, "hint_del_item"),
-		i18n.T(m.cfg, "hint_del_all"),
-	}))
+	writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 	b.WriteString("\n")
 
 	return b.String()

@@ -106,6 +106,7 @@ type AnimeModel struct {
 	lastPlayTime  time.Time
 	returnScreen  animeScreen
 	returnIndex   int
+	help          bool
 }
 
 func NewAnimeModel(parent MainModel) AnimeModel {
@@ -134,6 +135,8 @@ func (m *AnimeModel) getClient() api.MovieSource {
 
 func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case trendingAnimeMsg:
 		m.loading = false
@@ -230,7 +233,13 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch key {
 			case "ctrl+c":
 				return m, tea.Quit
-			case "esc":
+			case "?":
+				m.help = !m.help
+			case "esc", "q":
+				if m.help {
+					m.help = false
+					return m, nil
+				}
 				return m.parent, nil
 			case "s":
 				m.screen = animeScreenSearch
@@ -400,7 +409,13 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "ctrl+c":
 			return m, tea.Quit
-		case "esc":
+		case "?":
+			m.help = !m.help
+		case "esc", "q":
+			if m.help {
+				m.help = false
+				return m, nil
+			}
 			m.screen = m.returnScreen
 			m.selectedAnime = nil
 			m.movie = nil
@@ -428,9 +443,11 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = 0
 			}
 		case "pgdown", "ctrl+d":
-			m.index += 10
-			if m.index >= len(m.episodeList) {
-				m.index = len(m.episodeList) - 1
+			if len(m.episodeList) > 0 {
+				m.index += 10
+				if m.index >= len(m.episodeList) {
+					m.index = len(m.episodeList) - 1
+				}
 			}
 		case "g":
 			m.index = 0
@@ -439,7 +456,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index = len(m.episodeList) - 1
 			}
 		case "enter":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if len(m.episodeList) > 0 && m.index < len(m.episodeList) {
@@ -450,7 +467,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.playEpisode(m.index)
 			}
 		case "n":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if m.currentEpIdx < len(m.episodeList)-1 {
@@ -462,7 +479,7 @@ func (m AnimeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.statusMsg = "⚠ " + i18n.T(m.cfg, "anime_msg_last_ep")
 		case "p":
-			if time.Since(m.lastPlayTime) < 2*time.Second {
+			if time.Since(m.lastPlayTime) < 300*time.Millisecond {
 				return m, nil
 			}
 			if m.currentEpIdx > 0 {
@@ -766,7 +783,106 @@ func thumbnailCmd(imageURL string) tea.Cmd {
 
 // --- View ---
 
+// currentList returns the list the cursor currently navigates.
+func (m AnimeModel) currentList() []api.AnimeItem {
+	if m.screen == animeScreenSearch {
+		if m.searchQuery != "" {
+			return m.fuzzyResults
+		}
+		return m.animeList
+	}
+	return m.trendingList
+}
+
+func (m AnimeModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if m.help {
+		if msg.Button == tea.MouseButtonLeft {
+			m.help = false
+		}
+		return m, nil
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		delta := 1
+		if msg.Button == tea.MouseButtonWheelUp {
+			delta = -1
+		}
+		if m.screen == animeScreenEpisodes {
+			m.index = clampIndex(m.index, delta, len(m.episodeList))
+			return m, nil
+		}
+		m.index = clampIndex(m.index, delta, len(m.currentList()))
+		return m, nil
+
+	case tea.MouseButtonLeft:
+		if key, ok := m.parent.ui.hintKeyAt(msg.X, msg.Y); ok {
+			return m.Update(key)
+		}
+		row, ok := m.parent.ui.rowAt(msg.X, msg.Y)
+		if !ok {
+			return m, nil
+		}
+		total := len(m.currentList())
+		if m.screen == animeScreenEpisodes {
+			total = len(m.episodeList)
+		}
+		if row < 0 || row >= total {
+			return m, nil
+		}
+		if row == m.index {
+			key, _ := keyMsgFor("enter")
+			return m.Update(key)
+		}
+		m.index = row
+	}
+	return m, nil
+}
+
+func (m AnimeModel) hints() []string {
+	switch m.screen {
+	case animeScreenSearch:
+		return []string{
+			"Esc: " + i18n.T(m.cfg, "anime_tab_trending"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_pgup_dn"),
+			i18n.T(m.cfg, "hint_enter_select_2"),
+			`Ctrl+O: ` + i18n.T(m.cfg, "hint_switch_source"),
+			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
+			"?: Trợ giúp",
+		}
+	case animeScreenEpisodes:
+		return []string{
+			i18n.T(m.cfg, "hint_esc_back"),
+			i18n.T(m.cfg, "hint_nav"),
+			i18n.T(m.cfg, "hint_pgup_dn"),
+			i18n.T(m.cfg, "hint_start_end"),
+			i18n.T(m.cfg, "hint_enter_play"),
+			i18n.T(m.cfg, "hint_next_prev"),
+			`s: Server`,
+			`f: ⭐`,
+			"?: Trợ giúp",
+		}
+	}
+	return []string{
+		`Ctrl+O: ` + i18n.T(m.cfg, "hint_switch_source"),
+		`s: ` + i18n.T(m.cfg, "hint_search"),
+		i18n.T(m.cfg, "hint_enter_open"),
+		i18n.T(m.cfg, "hint_nav"),
+		i18n.T(m.cfg, "hint_esc_back"),
+		"?: Trợ giúp",
+	}
+}
+
 func (m AnimeModel) View() string {
+	m.parent.ui.reset()
+	if m.help {
+		return renderHelp(m.parent.width, m.parent.height, m.hints())
+	}
+
 	var b strings.Builder
 
 	switch m.screen {
@@ -796,12 +912,19 @@ func (m AnimeModel) View() string {
 				Foreground(theme.Primary).
 				Background(theme.BackgroundLight).
 				Bold(true).
+				Width(listRowWidth(m.parent.width)).
 				Padding(0, 1)
 			normStyle := lipgloss.NewStyle().
 				Foreground(theme.TextSecondary).
 				Padding(0, 1)
 
+			maxRows := listCapacity(m.parent.height, 16)
+			start, end := windowedRange(len(m.trendingList), m.index, maxRows)
+			m.parent.ui.beginRows(&b, start, end-start)
 			for i, anime := range m.trendingList {
+				if i < start || i >= end {
+					continue
+				}
 				yearStr := ""
 				if anime.Year > 0 {
 					yearStr = lipgloss.NewStyle().Foreground(theme.TextMuted).Render(
@@ -816,19 +939,18 @@ func (m AnimeModel) View() string {
 				}
 				b.WriteString("\n")
 			}
+			if len(m.trendingList) > end-start {
+				b.WriteString("  ")
+				b.WriteString(theme.Muted.Render(fmt.Sprintf("%d-%d / %d", start+1, end, len(m.trendingList))))
+				b.WriteString("\n")
+			}
 		}
 
 		if m.statusMsg != "" {
 			b.WriteString(drawSuccessLine(m.statusMsg))
 		}
 
-		b.WriteString(drawStatusBar([]string{
-			`Ctrl+o: ` + i18n.T(m.cfg, "hint_switch_source"),
-			`s: ` + i18n.T(m.cfg, "hint_search"),
-			i18n.T(m.cfg, "hint_enter_open"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_esc_back"),
-		}))
+		writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		b.WriteString("\n")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -876,6 +998,7 @@ func (m AnimeModel) View() string {
 				Foreground(theme.Primary).
 				Background(theme.BackgroundLight).
 				Bold(true).
+				Width(listRowWidth(m.parent.width)).
 				Padding(0, 1)
 			normStyle := lipgloss.NewStyle().
 				Foreground(theme.TextSecondary).
@@ -899,6 +1022,7 @@ func (m AnimeModel) View() string {
 					}
 				}
 				start, end := windowedRange(len(displayList), m.index, maxRows)
+				m.parent.ui.beginRows(&b, start, end-start)
 				for i, anime := range displayList {
 					if i < start || i >= end {
 						continue
@@ -930,14 +1054,7 @@ func (m AnimeModel) View() string {
 			b.WriteString(drawSuccessLine(m.statusMsg))
 		}
 
-		b.WriteString(drawStatusBar([]string{
-			"Esc: " + i18n.T(m.cfg, "anime_tab_trending"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_pgup_dn"),
-			i18n.T(m.cfg, "hint_enter_select_2"),
-			`Ctrl+o: ` + i18n.T(m.cfg, "hint_switch_source"),
-			`Ctrl+U: ` + i18n.T(m.cfg, "hint_clear"),
-		}))
+		writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		b.WriteString("\n")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -948,7 +1065,7 @@ func (m AnimeModel) View() string {
 		if m.selectedAnime != nil {
 			animeName = m.selectedAnime.Name
 		}
-		b.WriteString(drawHeader("📺", animeName, nil, theme.AnimeAccent))
+		b.WriteString(drawHeader("📺", animeName, []string{i18n.T(m.cfg, "anime_title")}, theme.AnimeAccent))
 
 		// Movie meta info (quality, lang, episodes)
 		if m.movie != nil {
@@ -1060,8 +1177,10 @@ func (m AnimeModel) View() string {
 			okStyle := theme.EpisodePlaying.Copy()
 
 			if total > 30 {
+				m.parent.ui.beginGrid(&b, start, end-start, 5, 14)
 				m.renderEpisodeGrid(&b, start, end, selStyle, normStyle, okStyle)
 			} else {
+				m.parent.ui.beginRows(&b, start, end-start)
 				m.renderEpisodeList(&b, start, end, selStyle, normStyle, okStyle)
 			}
 
@@ -1085,16 +1204,7 @@ func (m AnimeModel) View() string {
 			}
 		}
 
-		b.WriteString(drawStatusBar([]string{
-			i18n.T(m.cfg, "hint_esc_back"),
-			i18n.T(m.cfg, "hint_nav"),
-			i18n.T(m.cfg, "hint_pgup_dn"),
-			i18n.T(m.cfg, "hint_start_end"),
-			i18n.T(m.cfg, "hint_enter_play"),
-			i18n.T(m.cfg, "hint_next_prev"),
-			`s: Server`,
-			`f: ⭐`,
-		}))
+		writeStatusBar(&b, m.parent.ui, m.parent.width, m.hints())
 		b.WriteString("\n")
 	}
 

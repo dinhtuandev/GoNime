@@ -773,7 +773,7 @@ func posterSizedCmd(imageURL, size string) tea.Cmd {
 
 // posterCmd downloads a poster image URL and renders it with chafa for detail views
 func posterCmd(imageURL string) tea.Cmd {
-	return posterSizedCmd(imageURL, "28x16")
+	return posterSizedCmd(imageURL, "40x22")
 }
 
 // thumbnailCmd downloads a poster image URL and renders it with chafa for list views
@@ -1130,10 +1130,10 @@ func (m AnimeModel) View() string {
 				if len([]rune(desc)) > 200 {
 					desc = string([]rune(desc)[:200]) + ""
 				}
-				info.WriteString("\n" + mutedStyle.Render(wordWrap(desc, 50)))
+				info.WriteString("\n" + mutedStyle.Render(wordWrap(desc, 62)))
 			}
-			posterStyle := lipgloss.NewStyle().Padding(0, 1)
-			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(56)
+			posterStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(theme.AnimeAccent).Padding(0, 1)
+			infoStyle := lipgloss.NewStyle().Padding(0, 2).Width(64)
 			panel := lipgloss.JoinHorizontal(lipgloss.Top,
 				posterStyle.Render(m.posterArt),
 				infoStyle.Render(info.String()),

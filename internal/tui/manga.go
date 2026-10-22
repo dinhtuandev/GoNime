@@ -1060,8 +1060,8 @@ func (m MangaModel) View() string {
 				}
 				info.WriteString("\n" + mutedStyle.Render(wordWrap(desc, 50)))
 			}
-			posterStyle := lipgloss.NewStyle().Padding(0, 1)
-			infoStyle := lipgloss.NewStyle().Padding(0, 1).Width(56)
+			posterStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(theme.MangaAccent).Padding(0, 1)
+			infoStyle := lipgloss.NewStyle().Padding(0, 2).Width(64)
 			panel := lipgloss.JoinHorizontal(lipgloss.Top,
 				posterStyle.Render(m.posterArt),
 				infoStyle.Render(info.String()),

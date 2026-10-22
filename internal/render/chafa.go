@@ -184,6 +184,9 @@ func (r *ChafaRenderer) RenderFile(path string) (string, error) {
 	mode := ResolveEffectiveMode(r.Mode)
 
 	if mode == "native" {
+		if out, err := RenderNativeImage(path, w, h); err == nil {
+			return out, nil
+		}
 		if out, err := r.renderNative(path, size); err == nil {
 			return out, nil
 		}

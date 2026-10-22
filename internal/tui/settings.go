@@ -167,11 +167,13 @@ func (m *SettingsModel) applyEdit() error {
 		}
 		m.cfg.MangaURL = val
 	case settingsFieldImageMode:
-		mode := config.NormalizeImageMode(strings.ToLower(val))
-		if mode != "auto" && mode != "native" && mode != "chafa" {
+		mode := strings.ToLower(strings.TrimSpace(val))
+		switch mode {
+		case "auto", "native", "halfblock", "chafa", "truecolor", "blocks":
+		default:
 			return errors.New(i18n.T(m.cfg, "set_err_image_mode"))
 		}
-		m.cfg.ImageMode = mode
+		m.cfg.ImageMode = config.NormalizeImageMode(mode)
 	case settingsFieldLanguage:
 		if val != "vi" && val != "en" {
 			return errors.New(i18n.T(m.cfg, "set_err_lang"))

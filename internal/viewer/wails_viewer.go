@@ -1,6 +1,8 @@
 package viewer
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -23,6 +25,7 @@ type WailsViewerReal struct {
 	server              *http.Server
 	chapters            []ChapterInfo
 	currentChapterIndex int
+	token               string
 	scraper             interface {
 		GetChapterImages(url string) ([]string, error)
 	}
@@ -79,6 +82,13 @@ func (w *WailsViewerReal) startServer() error {
 		return fmt.Errorf("failed to load embedded frontend: %v", err)
 	}
 
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		ln.Close()
+		return fmt.Errorf("failed to generate viewer token: %v", err)
+	}
+	token := hex.EncodeToString(buf)
+
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.HandleFunc("/api/images", w.handleImages)
@@ -87,6 +97,7 @@ func (w *WailsViewerReal) startServer() error {
 
 	w.mu.Lock()
 	w.serverPort = port
+	w.token = token
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
 		Handler:           mux,
@@ -114,6 +125,7 @@ func (w *WailsViewerReal) handleImages(wr http.ResponseWriter, req *http.Request
 	start := w.start
 	chapters := w.chapters
 	chapterIndex := w.currentChapterIndex
+	token := w.token
 	w.mu.Unlock()
 
 	chapterTitle := ""
@@ -127,13 +139,26 @@ func (w *WailsViewerReal) handleImages(wr http.ResponseWriter, req *http.Request
 		"chapters":     chapters,
 		"chapterIndex": chapterIndex,
 		"chapterTitle": chapterTitle,
+		"token":        token,
 	})
+}
+
+// authorized reports whether the request carries the viewer's session token.
+func (w *WailsViewerReal) authorized(req *http.Request) bool {
+	w.mu.Lock()
+	token := w.token
+	w.mu.Unlock()
+	return token != "" && req.Header.Get("X-Viewer-Token") == token
 }
 
 // handleChapterChange handles chapter navigation requests
 func (w *WailsViewerReal) handleChapterChange(wr http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		wr.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !w.authorized(req) {
+		wr.WriteHeader(http.StatusForbidden)
 		return
 	}
 
@@ -189,6 +214,10 @@ func (w *WailsViewerReal) handleChapterChange(wr http.ResponseWriter, req *http.
 func (w *WailsViewerReal) handleUpdate(wr http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		wr.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !w.authorized(req) {
+		wr.WriteHeader(http.StatusForbidden)
 		return
 	}
 

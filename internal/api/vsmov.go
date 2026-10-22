@@ -1,11 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
+
+	"gonime/internal/httpx"
+	"gonime/internal/sanitize"
 )
 
 // VSMOV JSON API — https://vsmov.com/api
@@ -78,7 +82,11 @@ type vsmovDetailResponse struct {
 }
 
 func (c *VSMOVClient) getJSON(reqURL string, out interface{}) error {
-	resp, err := c.HTTPClient.Get(reqURL) //nolint:noctx
+	resp, err := httpx.Get(context.Background(), reqURL,
+		httpx.WithHeader("User-Agent", "GoNime/1.0"),
+		httpx.WithHeader("Accept", "application/json"),
+		httpx.WithHeader("Referer", "https://vsmov.com/"),
+	)
 	if err != nil {
 		return err
 	}
@@ -121,8 +129,8 @@ func vsmovItems(items []vsmovListItem) []AnimeItem {
 			poster = m.ThumbURL.String()
 		}
 		out = append(out, AnimeItem{
-			Name:       m.Name,
-			OriginName: m.OriginName,
+			Name:       sanitize.Text(m.Name),
+			OriginName: sanitize.Text(m.OriginName),
 			Slug:       m.Slug,
 			Year:       m.Year,
 			PosterURL:  poster,
@@ -147,16 +155,16 @@ func (c *VSMOVClient) GetDetails(slug string) (*MovieInfo, []EpisodeData, error)
 	thumb := m.ThumbURL.String()
 
 	movie := &MovieInfo{
-		Name:        m.Name,
+		Name:        sanitize.Text(m.Name),
 		Slug:        m.Slug,
-		OriginName:  m.OriginName,
+		OriginName:  sanitize.Text(m.OriginName),
 		PosterURL:   poster,
 		ThumbURL:    thumb,
 		Year:        m.Year,
-		Episode:     m.EpisodeCurrent.String(),
-		Quality:     m.Quality,
-		Lang:        m.Lang,
-		Description: m.Content.String(),
+		Episode:     sanitize.Text(m.EpisodeCurrent.String()),
+		Quality:     sanitize.Text(m.Quality),
+		Lang:        sanitize.Text(m.Lang),
+		Description: sanitize.Text(m.Content.String()),
 	}
 
 	var episodes []EpisodeData

@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gonime/internal/httpx"
+	"gonime/internal/sanitize"
 )
 
 // MangaDex scraper — JSON API, không scrape HTML.
@@ -86,14 +89,10 @@ type mdChapterList struct {
 }
 
 func (s *MangaDexScraper) getJSON(ctx context.Context, reqURL string, out interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "GoNime/1.0 (https://github.com/dinhtuandev/GoNime)")
-
-	resp, err := s.Client.Do(req)
+	resp, err := httpx.Get(ctx, reqURL,
+		httpx.WithHeader("Accept", "application/json"),
+		httpx.WithHeader("User-Agent", "GoNime/1.0 (https://github.com/dinhtuandev/GoNime)"),
+	)
 	if err != nil {
 		return err
 	}
@@ -142,12 +141,12 @@ func (s *MangaDexScraper) toManga(m mdManga) Manga {
 		}
 	}
 	return Manga{
-		Name:        pickText(m.Attributes.Title),
+		Name:        sanitize.Text(pickText(m.Attributes.Title)),
 		Slug:        m.ID,
 		Cover:       cover,
-		Description: pickText(m.Attributes.Description),
-		Author:      author,
-		Status:      m.Attributes.Status,
+		Description: sanitize.Text(pickText(m.Attributes.Description)),
+		Author:      sanitize.Text(author),
+		Status:      sanitize.Text(m.Attributes.Status),
 		Genres:      genres,
 	}
 }

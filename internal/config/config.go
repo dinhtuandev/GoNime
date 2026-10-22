@@ -53,8 +53,10 @@ func (c *Config) Validate() error {
 
 func NormalizeImageMode(mode string) string {
 	switch mode {
-	case "auto", "native", "chafa":
+	case "auto", "native", "chafa", "halfblock":
 		return mode
+	case "truecolor", "blocks":
+		return "halfblock"
 	default:
 		return "auto"
 	}
@@ -146,7 +148,7 @@ func (m *Manager) SaveConfig(cfg *Config) error {
 	}
 
 	tmpFile := m.ConfigFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return err
 	}
 
@@ -198,7 +200,7 @@ func (m *Manager) SaveHistory(items []HistoryItem) error {
 	}
 
 	tmpFile := m.HistoryFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return err
 	}
 
@@ -251,7 +253,7 @@ func (m *Manager) SaveFavorites(items []FavoriteItem) error {
 	}
 
 	tmpFile := m.FavoritesFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return err
 	}
 

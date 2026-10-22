@@ -30,11 +30,13 @@ func NewChafaRenderer(cacheDir string, width, height int) (*ChafaRenderer, error
 	return NewImageRenderer(cacheDir, width, height, "chafa")
 }
 
-// NewImageRenderer tạo renderer với image mode: auto/native/chafa.
+// NewImageRenderer tạo renderer với image mode: auto/native/halfblock/chafa.
+// Chỉ mode chafa bắt buộc phải có binary chafa.
 func NewImageRenderer(cacheDir string, width, height int, mode string) (*ChafaRenderer, error) {
-	path, err := findChafa()
-	if err != nil {
-		return nil, err
+	mode = NormalizeMode(mode)
+	path, findErr := findChafa()
+	if findErr != nil && mode == "chafa" {
+		return nil, findErr
 	}
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("không tạo được cache dir: %v", err)
@@ -44,14 +46,16 @@ func NewImageRenderer(cacheDir string, width, height int, mode string) (*ChafaRe
 		cacheDir:  cacheDir,
 		Width:     width,
 		Height:    height,
-		Mode:      NormalizeMode(mode),
+		Mode:      mode,
 	}, nil
 }
 
 func NormalizeMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "auto", "native", "chafa":
+	case "auto", "native", "chafa", "halfblock":
 		return strings.ToLower(strings.TrimSpace(mode))
+	case "truecolor", "blocks":
+		return "halfblock"
 	default:
 		return "auto"
 	}
@@ -95,14 +99,16 @@ func ResolveEffectiveMode(mode string) string {
 		if SupportsNativeImage() {
 			return "native"
 		}
-		return "chafa"
+		return "halfblock"
 	case "chafa":
 		return "chafa"
+	case "halfblock":
+		return "halfblock"
 	default: // auto
 		if SupportsNativeImage() {
 			return "native"
 		}
-		return "chafa"
+		return "halfblock"
 	}
 }
 
@@ -181,6 +187,13 @@ func (r *ChafaRenderer) RenderFile(path string) (string, error) {
 		if out, err := r.renderNative(path, size); err == nil {
 			return out, nil
 		}
+		mode = "halfblock"
+	}
+
+	if mode == "halfblock" {
+		if out, err := RenderHalfBlock(path, w, h); err == nil {
+			return out, nil
+		}
 	}
 
 	return r.renderSymbols(path, size)
@@ -208,6 +221,9 @@ func (r *ChafaRenderer) renderNative(path, size string) (string, error) {
 }
 
 func (r *ChafaRenderer) renderSymbols(path, size string) (string, error) {
+	if r.chafaPath == "" {
+		return "", fmt.Errorf("chafa không khả dụng. Cài bằng: winget install hpjansson.Chafa")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	// Dùng --symbols block để tương thích tốt với Windows Terminal

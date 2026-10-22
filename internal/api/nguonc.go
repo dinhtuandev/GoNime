@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
+
+	"gonime/internal/httpx"
+	"gonime/internal/sanitize"
 )
 
 // NguonC JSON API — https://phim.nguonc.com/api/
@@ -18,27 +21,20 @@ import (
 
 const nguoncBase = "https://phim.nguonc.com"
 
-type NguonCScraper struct {
-	client *http.Client
-}
+type NguonCScraper struct{}
 
 func NewNguonCScraper() *NguonCScraper {
-	return &NguonCScraper{
-		client: &http.Client{Timeout: 30 * time.Second},
-	}
+	return &NguonCScraper{}
 }
 
 func (s *NguonCScraper) Name() string { return "nguonc" }
 
 func (s *NguonCScraper) doGet(reqURL string) (*http.Response, error) {
-	req, err := http.NewRequest("GET", reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "GoNime/1.0")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Referer", nguoncBase+"/")
-	return s.client.Do(req)
+	return httpx.Get(context.Background(), reqURL,
+		httpx.WithHeader("User-Agent", "GoNime/1.0"),
+		httpx.WithHeader("Accept", "application/json"),
+		httpx.WithHeader("Referer", nguoncBase+"/"),
+	)
 }
 
 // --- Response types ---
@@ -107,8 +103,8 @@ func (s *NguonCScraper) GetTrending(page int) ([]AnimeItem, string, error) {
 	var items []AnimeItem
 	for _, m := range result.Items {
 		items = append(items, AnimeItem{
-			Name:       m.Name,
-			OriginName: m.OriginalName,
+			Name:       sanitize.Text(m.Name),
+			OriginName: sanitize.Text(m.OriginalName),
 			Slug:       m.Slug,
 			PosterURL:  m.PosterURL,
 		})
@@ -137,8 +133,8 @@ func (s *NguonCScraper) Search(query string) ([]AnimeItem, string, error) {
 	var items []AnimeItem
 	for _, m := range result.Items {
 		items = append(items, AnimeItem{
-			Name:       m.Name,
-			OriginName: m.OriginalName,
+			Name:       sanitize.Text(m.Name),
+			OriginName: sanitize.Text(m.OriginalName),
 			Slug:       m.Slug,
 			PosterURL:  m.PosterURL,
 		})
@@ -167,14 +163,14 @@ func (s *NguonCScraper) GetDetails(slug string) (*MovieInfo, []EpisodeData, erro
 	year := int(m.Year)
 
 	info := &MovieInfo{
-		Name:        m.Name,
+		Name:        sanitize.Text(m.Name),
 		Slug:        m.Slug,
-		OriginName:  m.OriginName,
+		OriginName:  sanitize.Text(m.OriginName),
 		PosterURL:   m.PosterURL,
-		Description: m.Description,
+		Description: sanitize.Text(m.Description),
 		Year:        year,
-		Quality:     m.Quality,
-		Episode:     m.CurrentEp,
+		Quality:     sanitize.Text(m.Quality),
+		Episode:     sanitize.Text(m.CurrentEp),
 	}
 
 	// Lấy server đầu tiên có dữ liệu, ưu tiên m3u8

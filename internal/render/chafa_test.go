@@ -4,12 +4,14 @@ import "testing"
 
 func TestNormalizeMode(t *testing.T) {
 	tests := map[string]string{
-		"auto":   "auto",
-		"native": "native",
-		"chafa":  "chafa",
-		"AUTO":   "auto",
-		"foo":    "auto",
-		"":       "auto",
+		"auto":      "auto",
+		"native":    "native",
+		"chafa":     "chafa",
+		"halfblock": "halfblock",
+		"truecolor": "halfblock",
+		"AUTO":      "auto",
+		"foo":       "auto",
+		"":          "auto",
 	}
 
 	for in, want := range tests {
@@ -23,8 +25,11 @@ func TestResolveEffectiveMode(t *testing.T) {
 	t.Setenv("KITTY_WINDOW_ID", "")
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("TERM_PROGRAM", "")
-	if got := ResolveEffectiveMode("native"); got != "chafa" {
-		t.Fatalf("expected native to fallback when unsupported, got %q", got)
+	if got := ResolveEffectiveMode("native"); got != "halfblock" {
+		t.Fatalf("expected native to fallback to halfblock when unsupported, got %q", got)
+	}
+	if got := ResolveEffectiveMode("auto"); got != "halfblock" {
+		t.Fatalf("expected auto -> halfblock without native support, got %q", got)
 	}
 
 	t.Setenv("KITTY_WINDOW_ID", "1")
@@ -34,6 +39,9 @@ func TestResolveEffectiveMode(t *testing.T) {
 
 	if got := ResolveEffectiveMode("chafa"); got != "chafa" {
 		t.Fatalf("expected chafa mode unchanged, got %q", got)
+	}
+	if got := ResolveEffectiveMode("halfblock"); got != "halfblock" {
+		t.Fatalf("expected halfblock mode unchanged, got %q", got)
 	}
 }
 

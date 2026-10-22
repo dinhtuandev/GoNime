@@ -1,6 +1,7 @@
 let images = [];
 let currentIndex = 0;
 let zoomLevel = 100;
+let viewerToken = '';
 
 let chapters = [];
 let currentChapterIndex = 0;
@@ -34,7 +35,11 @@ function buildSignature(data) {
 
 async function fetchState() {
     const response = await fetch('/api/images', { cache: 'no-store' });
-    return response.json();
+    const data = await response.json();
+    if (data.token) {
+        viewerToken = data.token;
+    }
+    return data;
 }
 
 function updateFromState(data, forceRender = false) {
@@ -267,7 +272,10 @@ async function notifyChapterChange(newIndex) {
     try {
         const response = await fetch('/api/chapter', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Viewer-Token': viewerToken
+            },
             body: JSON.stringify({ index: newIndex })
         });
         const data = await response.json();

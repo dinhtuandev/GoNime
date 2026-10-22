@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
+
+	"gonime/internal/httpx"
 )
 
 const (
@@ -84,13 +87,10 @@ func NewAnimeClient() *AnimeClient {
 }
 
 func (c *AnimeClient) doGet(reqURL string) (*http.Response, error) {
-	req, err := http.NewRequest("GET", reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "GoNime/1.0.0")
-	req.Header.Set("Accept", "application/json")
-	return c.HTTPClient.Do(req)
+	return httpx.Get(context.Background(), reqURL,
+		httpx.WithHeader("User-Agent", "GoNime/1.0.0"),
+		httpx.WithHeader("Accept", "application/json"),
+	)
 }
 
 // Search tìm kiếm anime theo keyword, trả về danh sách AnimeItem

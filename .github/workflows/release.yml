@@ -5,108 +5,43 @@ on:
     tags:
       - "v*"
 
-# Require CI to pass before release can be published
-# (enforced via branch protection + tag protection — this workflow
-#  itself also runs tests before building release assets)
-
 permissions:
   contents: write
 
 jobs:
-  # ── Gate: run tests on linux before building release assets ────────────────
   test:
-    name: Pre-release tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-
       - name: Verify modules
         run: go mod verify
-
       - name: Vet
         run: go vet ./...
-
       - name: Test
-        # Unit tests only; integration tests need live third-party APIs.
         run: go test -race -count=1 -timeout=120s ./...
 
-  # ── Build matrix: cross-compile for all target platforms ───────────────────
-  build-and-release:
-    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+  goreleaser:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - goos: windows
-            goarch: amd64
-            ext: .exe
-          - goos: windows
-            goarch: arm64
-            ext: .exe
-          - goos: linux
-            goarch: amd64
-            ext: ""
-          - goos: linux
-            goarch: arm64
-            ext: ""
-          - goos: darwin
-            goarch: amd64
-            ext: ""
-          - goos: darwin
-            goarch: arm64
-            ext: ""
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
-        run: |
-          mkdir -p dist
-          BIN_NAME="gonime-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          VERSION="${GITHUB_REF_NAME}"
-          COMMIT="${GITHUB_SHA::8}"
-          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          go build \
-            -trimpath \
-            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
-            -o "dist/${BIN_NAME}" \
-            ./cmd/gonime
-
-      - name: Generate checksum
-        run: |
-          cd dist
-          sha256sum * > checksums.txt
-          cat checksums.txt
-
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          files: |
-            dist/gonime-*
-            dist/checksums.txt
-          generate_release_notes: true
-          draft: true
-          fail_on_unmatched_files: true
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

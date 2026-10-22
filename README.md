@@ -15,6 +15,38 @@
     ╚═════╝   ╚═════╝  ╚═╝  ╚═══╝ ╚═╝ ╚═╝     ╚═╝ ╚══════╝
 ```
 
+## 📦 Cài đặt
+
+Cài một lệnh, không cần tải dự án.
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/dinhtuandev/GoNime/main/install.ps1 | iex
+```
+
+**Linux / macOS**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dinhtuandev/GoNime/main/install.sh | sh
+```
+
+Script tự chọn bản đúng theo OS/kiến trúc, tải từ GitHub Releases, kiểm tra SHA-256 rồi thêm vào PATH.
+
+**Tùy chọn**
+
+```bash
+VERSION=v1.0.0 curl -fsSL .../install.sh | sh   # ghim phiên bản
+DIR=~/.local/bin curl -fsSL .../install.sh | sh # đổi thư mục cài
+```
+
+**Build từ mã nguồn**
+
+```bash
+git clone https://github.com/dinhtuandev/GoNime.git
+cd GoNime
+go build -o gonime ./cmd/gonime
+```
 ## 🖼️ Screenshots
 
 ### Main Menu
